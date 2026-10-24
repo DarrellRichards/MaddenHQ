@@ -1,0 +1,345 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Auth.js models ---
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts   Account[]
+  sessions   Session[]
+  memberships LeagueMembership[]
+  tradesProposed Trade[] @relation("TradeProposer")
+  eaConnections EaConnection[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// --- Domain ---
+
+enum MembershipRole {
+  OWNER
+  COMMISSIONER
+  MEMBER
+}
+
+enum TradeStatus {
+  DRAFT
+  PROPOSED
+  ACCEPTED
+  REJECTED
+  VETOED
+  COMPLETED
+}
+
+enum WeeklyAwardType {
+  GAME_OF_THE_WEEK
+  AFC_OFFENSE_POTW
+  AFC_DEFENSE_POTW
+  NFC_OFFENSE_POTW
+  NFC_DEFENSE_POTW
+}
+
+enum SeasonAwardType {
+  MVP
+  OFFENSIVE_PLAYER
+  DEFENSIVE_PLAYER
+  ROOKIE_OF_THE_YEAR
+  COACH_OF_THE_YEAR
+  COMEBACK_PLAYER
+}
+
+model League {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  platform    String?  // xbox | playstation | pc
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships LeagueMembership[]
+  seasons     Season[]
+  teams       Team[]
+  players     Player[]
+  trades      Trade[]
+  weeklyAwards WeeklyAward[]
+  seasonAwards SeasonAward[]
+  eaConnection EaConnection?
+}
+
+model LeagueMembership {
+  id        String         @id @default(cuid())
+  leagueId  String
+  userId    String
+  role      MembershipRole @default(MEMBER)
+  teamId    String?
+  createdAt DateTime       @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team   Team?  @relation(fields: [teamId], references: [id])
+
+  @@unique([leagueId, userId])
+}
+
+model Season {
+  id        String   @id @default(cuid())
+  leagueId  String
+  year      Int
+  label     String?
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  league       League        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  weeks        Week[]
+  games        Game[]
+  seasonAwards SeasonAward[]
+
+  @@unique([leagueId, year])
+  @@index([leagueId, isCurrent])
+}
+
+model Week {
+  id       String @id @default(cuid())
+  seasonId String
+  number   Int
+  label    String?
+
+  season       Season        @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  games        Game[]
+  weeklyAwards WeeklyAward[]
+
+  @@unique([seasonId, number])
+}
+
+model Team {
+  id           String  @id @default(cuid())
+  leagueId     String
+  abbr         String
+  name         String
+  city         String?
+  conference   String? // AFC | NFC
+  division     String?
+  primaryColor String?
+  secondaryColor String?
+
+  league      League             @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  players     Player[]
+  memberships LeagueMembership[]
+  homeGames   Game[]             @relation("HomeTeam")
+  awayGames   Game[]             @relation("AwayTeam")
+  tradeAssets TradeAsset[]
+
+  @@unique([leagueId, abbr])
+  @@index([leagueId, conference])
+}
+
+model Player {
+  id         String  @id @default(cuid())
+  leagueId   String
+  teamId     String?
+  rosterId   String? // Madden roster id when synced
+  firstName  String
+  lastName   String
+  position   String
+  jerseyNumber Int?
+  overall    Int?
+  age        Int?
+  yearsPro   Int?
+
+  league     League          @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  team       Team?           @relation(fields: [teamId], references: [id])
+  gameStats  PlayerGameStat[]
+  tradeAssets TradeAsset[]
+  weeklyAwards WeeklyAward[]
+  seasonAwards SeasonAward[]
+
+  @@unique([leagueId, firstName, lastName, position])
+  @@unique([leagueId, rosterId])
+  @@index([leagueId, position])
+  @@index([teamId])
+  @@index([leagueId, lastName, firstName])
+}
+
+model Game {
+  id          String   @id @default(cuid())
+  seasonId    String
+  weekId      String
+  homeTeamId  String
+  awayTeamId  String
+  homeScore   Int?
+  awayScore   Int?
+  status      String   @default("scheduled") // scheduled | final | in_progress
+  playedAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  season    Season          @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  week      Week            @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  homeTeam  Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam  Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  playerStats PlayerGameStat[]
+  weeklyAwards WeeklyAward[]
+
+  @@unique([weekId, homeTeamId, awayTeamId])
+  @@index([seasonId, weekId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+}
+
+model PlayerGameStat {
+  id       String @id @default(cuid())
+  gameId   String
+  playerId String
+  teamId   String?
+
+  // Flexible bag for passing/rushing/receiving/defense so schema can evolve with Madden exports
+  stats Json @default("{}")
+
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, playerId])
+  @@index([playerId])
+}
+
+model Trade {
+  id          String      @id @default(cuid())
+  leagueId    String
+  proposerId  String
+  status      TradeStatus @default(DRAFT)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  resolvedAt  DateTime?
+
+  league     League            @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  proposer   User              @relation("TradeProposer", fields: [proposerId], references: [id])
+  assets     TradeAsset[]
+  evaluation TradeEvaluation?
+}
+
+model TradeAsset {
+  id       String  @id @default(cuid())
+  tradeId  String
+  side     String  // from | to
+  teamId   String?
+  playerId String?
+  pickDesc String? // e.g. "2027 1st"
+
+  trade  Trade   @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  team   Team?   @relation(fields: [teamId], references: [id])
+  player Player? @relation(fields: [playerId], references: [id])
+}
+
+model TradeEvaluation {
+  id        String   @id @default(cuid())
+  tradeId   String   @unique
+  score     Float?
+  summary   String?
+  details   Json?
+  model     String?
+  createdAt DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+}
+
+model WeeklyAward {
+  id        String          @id @default(cuid())
+  leagueId  String
+  weekId    String
+  type      WeeklyAwardType
+  playerId  String?
+  gameId    String?
+  rationale String?
+  model     String?
+  createdAt DateTime        @default(now())
+
+  league League  @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  week   Week    @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  player Player? @relation(fields: [playerId], references: [id])
+  game   Game?   @relation(fields: [gameId], references: [id])
+
+  @@unique([leagueId, weekId, type])
+  @@index([leagueId, type, weekId])
+}
+
+model SeasonAward {
+  id        String           @id @default(cuid())
+  leagueId  String
+  seasonId  String
+  type      SeasonAwardType
+  playerId  String?
+  rationale String?
+  model     String?
+  createdAt DateTime         @default(now())
+
+  league League  @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  season Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player Player? @relation(fields: [playerId], references: [id])
+
+  @@unique([leagueId, seasonId, type])
+}
+
+model EaConnection {
+  id                    String    @id @default(cuid())
+  leagueId              String    @unique
+  userId                String
+  accessTokenEncrypted  String    @db.Text
+  refreshTokenEncrypted String    @db.Text
+  accessTokenExpiresAt  DateTime?
+  eaLeagueId            String?
+  lastSyncAt            DateTime?
+  lastSyncStatus        String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
