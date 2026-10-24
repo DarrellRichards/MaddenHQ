@@ -6,7 +6,7 @@ MaddenHQ is modular on purpose so humans and coding agents can add features with
 
 1. Multi-league tenancy: every domain row hangs off `League`.
 2. Discord (or local/dev credentials) authenticates people; EA credentials authenticate data sync.
-3. EA client code lives behind `src/server/ea` (`EaClient` interface). Prefer the stub client in tests.
+3. EA client code lives behind `src/server/ea` (`EaClient` interface). Prefer the stub client in tests; `EA_CLIENT_MODE=live` uses Companion OAuth + Blaze (`live-client.ts`).
 4. AI features (trades, weekly awards, season awards) are service stubs first — swap implementations without changing UI contracts.
 5. Brand tokens are fixed: background `#FFFFFF`, primary `#4B5F91`, accent `#D32F2F`.
 
