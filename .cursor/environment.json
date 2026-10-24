@@ -1,0 +1,5 @@
+{
+  "name": "MaddenHQ",
+  "install": "sudo service postgresql start || true; sudo -u postgres psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='maddenhq'\" | grep -q 1 || sudo -u postgres psql -c \"CREATE USER maddenhq WITH PASSWORD 'maddenhq' SUPERUSER\"; sudo -u postgres psql -tc \"SELECT 1 FROM pg_database WHERE datname='maddenhq'\" | grep -q 1 || sudo -u postgres psql -c \"CREATE DATABASE maddenhq OWNER maddenhq\"; cp -n .env.example .env || true; npm ci; npx prisma migrate deploy; npx prisma db seed || npm run db:seed",
+  "start": "sudo service postgresql start || true; until pg_isready -h localhost -p 5432 -q; do sleep 1; done; exec npm run dev -- --hostname 0.0.0.0 --port 3000"
+}

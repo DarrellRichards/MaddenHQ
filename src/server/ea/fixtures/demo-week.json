@@ -1,0 +1,65 @@
+{
+  "leagueId": "stub-league-1",
+  "seasonYear": 2026,
+  "weekNumber": 1,
+  "teams": [
+    { "abbr": "KC", "name": "Chiefs", "city": "Kansas City", "conference": "AFC", "division": "West" },
+    { "abbr": "BUF", "name": "Bills", "city": "Buffalo", "conference": "AFC", "division": "East" },
+    { "abbr": "SF", "name": "49ers", "city": "San Francisco", "conference": "NFC", "division": "West" },
+    { "abbr": "PHI", "name": "Eagles", "city": "Philadelphia", "conference": "NFC", "division": "East" }
+  ],
+  "games": [
+    {
+      "homeAbbr": "KC",
+      "awayAbbr": "BUF",
+      "homeScore": 31,
+      "awayScore": 27,
+      "status": "final"
+    },
+    {
+      "homeAbbr": "PHI",
+      "awayAbbr": "SF",
+      "homeScore": 24,
+      "awayScore": 20,
+      "status": "final"
+    }
+  ],
+  "players": [
+    { "rosterId": "p1", "teamAbbr": "KC", "firstName": "Patrick", "lastName": "Mahomes", "position": "QB", "jerseyNumber": 15, "overall": 98 },
+    { "rosterId": "p2", "teamAbbr": "BUF", "firstName": "Josh", "lastName": "Allen", "position": "QB", "jerseyNumber": 17, "overall": 97 },
+    { "rosterId": "p3", "teamAbbr": "SF", "firstName": "Christian", "lastName": "McCaffrey", "position": "HB", "jerseyNumber": 23, "overall": 97 },
+    { "rosterId": "p4", "teamAbbr": "PHI", "firstName": "Jalen", "lastName": "Hurts", "position": "QB", "jerseyNumber": 1, "overall": 94 },
+    { "rosterId": "p5", "teamAbbr": "KC", "firstName": "Travis", "lastName": "Kelce", "position": "TE", "jerseyNumber": 87, "overall": 95 },
+    { "rosterId": "p6", "teamAbbr": "BUF", "firstName": "Von", "lastName": "Miller", "position": "LE", "jerseyNumber": 40, "overall": 88 }
+  ],
+  "playerGameStats": [
+    {
+      "playerKey": "p1",
+      "homeOrAway": "home",
+      "homeAbbr": "KC",
+      "awayAbbr": "BUF",
+      "stats": { "passYds": 312, "passTd": 3, "int": 0, "rushYds": 28 }
+    },
+    {
+      "playerKey": "p2",
+      "homeOrAway": "away",
+      "homeAbbr": "KC",
+      "awayAbbr": "BUF",
+      "stats": { "passYds": 289, "passTd": 2, "int": 1, "rushYds": 54, "rushTd": 1 }
+    },
+    {
+      "playerKey": "p4",
+      "homeOrAway": "home",
+      "homeAbbr": "PHI",
+      "awayAbbr": "SF",
+      "stats": { "passYds": 241, "passTd": 2, "rushYds": 62, "rushTd": 1 }
+    },
+    {
+      "playerKey": "p3",
+      "homeOrAway": "away",
+      "homeAbbr": "PHI",
+      "awayAbbr": "SF",
+      "stats": { "rushYds": 118, "rushTd": 1, "recYds": 44 }
+    }
+  ]
+}
