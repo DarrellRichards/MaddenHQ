@@ -98,7 +98,7 @@ export default async function LoginPage({
                 <input
                   name="password"
                   type="password"
-                  defaultValue={process.env.DEV_LOGIN_PASSWORD ?? "maddenhq-dev"}
+                  autoComplete="current-password"
                   required
                 />
               </label>

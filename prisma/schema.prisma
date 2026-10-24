@@ -201,6 +201,8 @@ model Player {
   weeklyAwards WeeklyAward[]
   seasonAwards SeasonAward[]
 
+  @@unique([leagueId, firstName, lastName, position])
+  @@unique([leagueId, rosterId])
   @@index([leagueId, position])
   @@index([teamId])
   @@index([leagueId, lastName, firstName])
@@ -225,6 +227,7 @@ model Game {
   playerStats PlayerGameStat[]
   weeklyAwards WeeklyAward[]
 
+  @@unique([weekId, homeTeamId, awayTeamId])
   @@index([seasonId, weekId])
   @@index([homeTeamId])
   @@index([awayTeamId])
