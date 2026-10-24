@@ -335,6 +335,10 @@ model EaConnection {
   refreshTokenEncrypted String    @db.Text
   accessTokenExpiresAt  DateTime?
   eaLeagueId            String?
+  eaLeagueName          String?
+  console               String? // xone | ps4 | pc | ps5 | xbsx | stadia
+  personaId             String?
+  blazeId               String?
   lastSyncAt            DateTime?
   lastSyncStatus        String?
   createdAt             DateTime  @default(now())

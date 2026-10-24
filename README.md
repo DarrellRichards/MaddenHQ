@@ -42,7 +42,9 @@ npm run dev                   # http://localhost:3000
 
 1. Sign in with Discord (or dev login)
 2. Create a league
-3. Open **Sync** → paste EA callback URL → run sync
+3. Open **Sync** → Open EA login → paste callback URL → choose persona/league → run sync
+
+Set `EA_CLIENT_MODE=live` (and yearly Companion constants in `.env`) for real Blaze sync. Default `stub` keeps local/CI offline. See [docs/ea-sync.md](docs/ea-sync.md).
 
 ## Docs
 
