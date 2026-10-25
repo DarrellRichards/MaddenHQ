@@ -6,7 +6,6 @@ import { MembershipRole } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
-import { syncLeagueFromEa } from "@/server/ea/sync";
 
 export async function createLeagueAction(formData: FormData) {
   const session = await auth();
@@ -90,63 +89,4 @@ async function createLeagueWithUniqueSlug(input: {
   }
 
   throw new Error("Could not allocate a unique league slug");
-}
-
-function isNextRedirect(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "digest" in error &&
-    String((error as { digest?: string }).digest).startsWith("NEXT_REDIRECT")
-  );
-}
-
-export async function triggerSyncAction(formData: FormData) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  const leagueId = String(formData.get("leagueId") ?? "");
-  const slug = String(formData.get("slug") ?? "");
-  const scopeRaw = String(formData.get("scope") ?? "all");
-  const scope = scopeRaw === "week" ? "week" : "all";
-  const weekNumberRaw = String(formData.get("weekNumber") ?? "").trim();
-  const weekNumber = weekNumberRaw ? Number(weekNumberRaw) : undefined;
-
-  const membership = await prisma.leagueMembership.findUnique({
-    where: {
-      leagueId_userId: { leagueId, userId: session.user.id },
-    },
-  });
-
-  if (
-    !membership ||
-    (membership.role !== MembershipRole.OWNER &&
-      membership.role !== MembershipRole.COMMISSIONER)
-  ) {
-    throw new Error("Only commissioners can sync");
-  }
-
-  try {
-    await syncLeagueFromEa(leagueId, {
-      scope,
-      weekNumber:
-        weekNumber != null && Number.isFinite(weekNumber) ? weekNumber : undefined,
-    });
-  } catch (error) {
-    if (isNextRedirect(error)) {
-      throw error;
-    }
-    const message =
-      error instanceof Error
-        ? error.message.slice(0, 280)
-        : "Sync failed. Try again in a few minutes.";
-    redirect(
-      `/leagues/${slug}/sync?error=${encodeURIComponent(message)}`,
-    );
-  }
-
-  revalidatePath(`/leagues/${slug}`);
-  redirect(`/leagues/${slug}/sync`);
 }

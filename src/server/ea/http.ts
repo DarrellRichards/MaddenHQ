@@ -1,3 +1,5 @@
+import "server-only";
+
 import { Agent, fetch as undiciFetch, type RequestInit } from "undici";
 import { constants } from "crypto";
 import { ANDROID_UA } from "./constants";
@@ -5,6 +7,9 @@ import { ANDROID_UA } from "./constants";
 /**
  * EA Blaze still requires legacy SSL options that default Node rejects.
  * Only used for wal2.tools.gos.bio-iad.ea.com Blaze hosts.
+ *
+ * Marked `server-only` and listed in `serverExternalPackages` so Next/Turbopack
+ * never evaluate undici in the browser (which throws `.bind` of undefined).
  */
 const blazeDispatcher = new Agent({
   connect: {

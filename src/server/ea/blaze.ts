@@ -6,6 +6,7 @@ import {
   StageIndex,
   type EaSystemConsole,
 } from "./constants";
+import { BlazeRpcError, isTransientBlazeCode } from "./blaze-errors";
 import { eaFetch, sanitizeJsonText } from "./http";
 import { calculateMessageAuth } from "./message-auth";
 import type { EaSessionTokens } from "./auth";
@@ -16,6 +17,8 @@ export type BlazeSession = {
   sessionKey: string;
   requestId: number;
 };
+
+export { BlazeRpcError, isTransientBlazeCode } from "./blaze-errors";
 
 type BlazeLoginResponse = {
   userLoginInfo?: {
@@ -28,28 +31,7 @@ type BlazeLoginResponse = {
   };
 };
 
-const TRANSIENT_BLAZE_CODES = new Set([
-  67606, // MCA_ERR_SERVER_ERROR
-  1073807360, // high load / timeout style (ERR_SYSTEM)
-]);
-
 const BLAZE_LOGIN_ATTEMPTS = 5;
-
-export function isTransientBlazeCode(code: number | undefined): boolean {
-  return code !== undefined && TRANSIENT_BLAZE_CODES.has(code);
-}
-
-export class BlazeRpcError extends Error {
-  errorcode?: number;
-  errorname?: string;
-
-  constructor(message: string, errorcode?: number, errorname?: string) {
-    super(message);
-    this.name = "BlazeRpcError";
-    this.errorcode = errorcode;
-    this.errorname = errorname;
-  }
-}
 
 function blazeHeaders(console: EaSystemConsole) {
   return {

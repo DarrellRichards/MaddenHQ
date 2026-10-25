@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { MembershipRole } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { triggerSyncAction } from "@/app/actions/leagues";
+import { triggerSyncAction } from "@/app/actions/sync";
 import {
   discoverEaPersonasAction,
   retryEaLeagueListAction,
