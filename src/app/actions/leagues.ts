@@ -6,8 +6,6 @@ import { MembershipRole } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
-import { encryptSecret } from "@/lib/crypto";
-import { getEaClient } from "@/server/ea";
 import { syncLeagueFromEa } from "@/server/ea/sync";
 
 export async function createLeagueAction(formData: FormData) {
@@ -92,63 +90,6 @@ async function createLeagueWithUniqueSlug(input: {
   }
 
   throw new Error("Could not allocate a unique league slug");
-}
-
-export async function connectEaAction(formData: FormData) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  const leagueId = String(formData.get("leagueId") ?? "");
-  const callbackUrl = String(formData.get("callbackUrl") ?? "").trim();
-  const slug = String(formData.get("slug") ?? "");
-
-  if (!leagueId || !callbackUrl) {
-    throw new Error("League and EA callback URL are required");
-  }
-
-  const membership = await prisma.leagueMembership.findUnique({
-    where: {
-      leagueId_userId: { leagueId, userId: session.user.id },
-    },
-  });
-
-  if (
-    !membership ||
-    (membership.role !== MembershipRole.OWNER &&
-      membership.role !== MembershipRole.COMMISSIONER)
-  ) {
-    throw new Error("Only commissioners can connect EA");
-  }
-
-  const client = getEaClient();
-  const tokens = await client.exchangeCallbackUrl(callbackUrl);
-  const leagues = await client.listLeagues(tokens);
-
-  await prisma.eaConnection.upsert({
-    where: { leagueId },
-    create: {
-      leagueId,
-      userId: session.user.id,
-      accessTokenEncrypted: encryptSecret(tokens.accessToken),
-      refreshTokenEncrypted: encryptSecret(tokens.refreshToken),
-      accessTokenExpiresAt: tokens.expiresAt,
-      eaLeagueId: leagues[0]?.id,
-      lastSyncStatus: "connected",
-    },
-    update: {
-      userId: session.user.id,
-      accessTokenEncrypted: encryptSecret(tokens.accessToken),
-      refreshTokenEncrypted: encryptSecret(tokens.refreshToken),
-      accessTokenExpiresAt: tokens.expiresAt,
-      eaLeagueId: leagues[0]?.id,
-      lastSyncStatus: "connected",
-    },
-  });
-
-  revalidatePath(`/leagues/${slug}/sync`);
-  redirect(`/leagues/${slug}/sync`);
 }
 
 export async function triggerSyncAction(formData: FormData) {

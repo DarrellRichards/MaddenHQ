@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { decryptSecret } from "@/lib/crypto";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { getEaClient } from "./index";
 import type { EaWeekExport } from "./types";
 
@@ -179,10 +179,26 @@ export async function syncLeagueFromEa(leagueId: string) {
 
   return withLeagueSyncLock(leagueId, async () => {
     const client = getEaClient();
-    const tokens = {
+    let tokens = {
       accessToken: decryptSecret(connection.accessTokenEncrypted),
       refreshToken: decryptSecret(connection.refreshTokenEncrypted),
       expiresAt: connection.accessTokenExpiresAt ?? undefined,
+      console: (connection.console ?? undefined) as
+        | "xone"
+        | "ps4"
+        | "pc"
+        | "ps5"
+        | "xbsx"
+        | "stadia"
+        | undefined,
+      personaId: connection.personaId ?? undefined,
+      blazeId: connection.blazeId ?? undefined,
+    };
+
+    // Refresh early so long exportAll runs use a valid access token.
+    tokens = {
+      ...tokens,
+      ...(await client.refreshTokens(tokens)),
     };
 
     const eaLeagueId = connection.eaLeagueId ?? (await client.listLeagues(tokens))[0]?.id;
@@ -212,6 +228,10 @@ export async function syncLeagueFromEa(leagueId: string) {
           where: { id: connection.id },
           data: {
             eaLeagueId,
+            accessTokenEncrypted: encryptSecret(tokens.accessToken),
+            refreshTokenEncrypted: encryptSecret(tokens.refreshToken),
+            accessTokenExpiresAt: tokens.expiresAt,
+            blazeId: tokens.blazeId ?? connection.blazeId,
             lastSyncAt: new Date(),
             lastSyncStatus: "ok",
           },

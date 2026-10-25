@@ -2,12 +2,25 @@ import { notFound, redirect } from "next/navigation";
 import { MembershipRole } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { connectEaAction, triggerSyncAction } from "@/app/actions/leagues";
+import { triggerSyncAction } from "@/app/actions/leagues";
+import {
+  discoverEaPersonasAction,
+  selectEaLeagueAction,
+  selectEaPersonaAction,
+} from "@/app/actions/ea-connect";
+import { getEaClient } from "@/server/ea";
+import {
+  getPendingEaTokens,
+  getPendingPersonas,
+} from "@/server/ea/pending-cookie";
+import { createBlazeSession, getMyLeagues } from "@/server/ea/blaze";
 
 export default async function SyncPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ step?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -15,6 +28,7 @@ export default async function SyncPage({
   }
 
   const { slug } = await params;
+  const { step } = await searchParams;
   const league = await prisma.league.findUnique({
     where: { slug },
     include: { eaConnection: true },
@@ -31,6 +45,38 @@ export default async function SyncPage({
     membership?.role === MembershipRole.OWNER ||
     membership?.role === MembershipRole.COMMISSIONER;
 
+  const client = getEaClient();
+  const loginUrl = client.getLoginUrl();
+  const mode = process.env.EA_CLIENT_MODE ?? "stub";
+
+  const pendingPersonas = step === "persona" ? await getPendingPersonas() : [];
+  const pendingTokens = step === "league" ? await getPendingEaTokens() : null;
+
+  let pendingLeagues: Array<{ id: string; name: string; seasonText?: string }> = [];
+  if (pendingTokens) {
+    if (mode === "stub") {
+      pendingLeagues = (await client.listLeagues(pendingTokens)).map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        seasonText: entry.seasonText,
+      }));
+    } else if (pendingTokens.console && pendingTokens.personaId) {
+      const { tokens, session: blaze } = await createBlazeSession({
+        accessToken: pendingTokens.accessToken,
+        refreshToken: pendingTokens.refreshToken,
+        expiresAt: pendingTokens.expiresAt ?? new Date(0),
+        console: pendingTokens.console,
+        personaId: pendingTokens.personaId,
+        blazeId: pendingTokens.blazeId,
+      });
+      pendingLeagues = (await getMyLeagues(tokens, blaze)).map((entry) => ({
+        id: String(entry.leagueId),
+        name: entry.leagueName,
+        seasonText: entry.seasonText,
+      }));
+    }
+  }
+
   return (
     <div className="stack">
       <section className="panel stack">
@@ -38,29 +84,83 @@ export default async function SyncPage({
           Connect EA
         </h2>
         <p className="muted" style={{ margin: 0 }}>
-          MaddenHQ does <strong>not</strong> store your EA password. Sign in with EA in
-          another tab, then paste the <code>http://127.0.0.1/...</code> callback URL
-          here. Tokens are encrypted at rest. EA APIs are unofficial and may break —
-          local/dev uses a stub client when <code>EA_CLIENT_MODE=stub</code>.
+          MaddenHQ does <strong>not</strong> store your EA password. Open EA login, paste
+          the <code>http://127.0.0.1/...</code> callback URL, pick your persona and league.
+          Tokens are encrypted at rest. Mode: <code>{mode}</code> (set{" "}
+          <code>EA_CLIENT_MODE=live</code> for real Companion/Blaze sync).
         </p>
+
         {!canManage ? (
           <div className="empty">Only commissioners can connect EA for this league.</div>
-        ) : (
-          <form action={connectEaAction} className="form-grid">
+        ) : step === "persona" ? (
+          <form action={selectEaPersonaAction} className="form-grid">
             <input type="hidden" name="leagueId" value={league.id} />
             <input type="hidden" name="slug" value={slug} />
             <label>
-              EA callback URL
-              <input
-                name="callbackUrl"
-                required
-                placeholder="http://127.0.0.1/success?code=..."
-              />
+              Madden persona
+              <select name="personaId" required defaultValue="">
+                <option value="" disabled>
+                  Select persona…
+                </option>
+                {pendingPersonas.map((persona) => (
+                  <option key={persona.personaId} value={persona.personaId}>
+                    {persona.displayName} · {persona.console}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="btn btn--accent">
+              Continue
+            </button>
+          </form>
+        ) : step === "league" ? (
+          <form action={selectEaLeagueAction} className="form-grid">
+            <input type="hidden" name="leagueId" value={league.id} />
+            <input type="hidden" name="slug" value={slug} />
+            <label>
+              EA franchise league
+              <select name="eaLeagueId" required defaultValue="">
+                <option value="" disabled>
+                  Select league…
+                </option>
+                {pendingLeagues.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                    {entry.seasonText ? ` · ${entry.seasonText}` : ""}
+                  </option>
+                ))}
+              </select>
             </label>
             <button type="submit" className="btn btn--accent">
               Save EA connection
             </button>
           </form>
+        ) : (
+          <div className="stack">
+            <a
+              href={loginUrl}
+              className="btn btn--primary"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open EA login
+            </a>
+            <form action={discoverEaPersonasAction} className="form-grid">
+              <input type="hidden" name="leagueId" value={league.id} />
+              <input type="hidden" name="slug" value={slug} />
+              <label>
+                EA callback URL
+                <input
+                  name="callbackUrl"
+                  required
+                  placeholder="http://127.0.0.1/success?code=..."
+                />
+              </label>
+              <button type="submit" className="btn btn--accent">
+                Continue with callback URL
+              </button>
+            </form>
+          </div>
         )}
       </section>
 
@@ -73,8 +173,17 @@ export default async function SyncPage({
             <table className="table">
               <tbody>
                 <tr>
-                  <th>EA league id</th>
-                  <td>{league.eaConnection.eaLeagueId ?? "—"}</td>
+                  <th>EA league</th>
+                  <td>
+                    {league.eaConnection.eaLeagueName ?? "—"}
+                    {league.eaConnection.eaLeagueId
+                      ? ` (${league.eaConnection.eaLeagueId})`
+                      : ""}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Console</th>
+                  <td>{league.eaConnection.console ?? "—"}</td>
                 </tr>
                 <tr>
                   <th>Last sync</th>
@@ -90,7 +199,7 @@ export default async function SyncPage({
                 </tr>
                 <tr>
                   <th>Client mode</th>
-                  <td>{process.env.EA_CLIENT_MODE ?? "stub"}</td>
+                  <td>{mode}</td>
                 </tr>
               </tbody>
             </table>

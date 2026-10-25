@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "EaConnection" ADD COLUMN IF NOT EXISTS "eaLeagueName" TEXT;
+ALTER TABLE "EaConnection" ADD COLUMN IF NOT EXISTS "console" TEXT;
+ALTER TABLE "EaConnection" ADD COLUMN IF NOT EXISTS "personaId" TEXT;
+ALTER TABLE "EaConnection" ADD COLUMN IF NOT EXISTS "blazeId" TEXT;
