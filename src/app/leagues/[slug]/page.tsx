@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCategoryLeaders, getCurrentSeason, getSeasonGames } from "@/server/stats/queries";
 
 export default async function LeagueOverviewPage({
   params,
@@ -11,7 +12,6 @@ export default async function LeagueOverviewPage({
   const league = await prisma.league.findUnique({
     where: { slug },
     include: {
-      seasons: { where: { isCurrent: true }, take: 1 },
       teams: { orderBy: { abbr: "asc" } },
       _count: { select: { players: true, trades: true, weeklyAwards: true } },
       eaConnection: true,
@@ -19,14 +19,19 @@ export default async function LeagueOverviewPage({
   });
   if (!league) notFound();
 
-  const season = league.seasons[0];
+  const season = await getCurrentSeason(league.id);
   const recentGames = season
-    ? await prisma.game.findMany({
-        where: { seasonId: season.id },
-        include: { homeTeam: true, awayTeam: true, week: true },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      })
+    ? (await getSeasonGames(season.id)).slice(-5).reverse()
+    : [];
+  const passingLeaders = season
+    ? (
+        await getCategoryLeaders({
+          leagueId: league.id,
+          seasonId: season.id,
+          category: "passing",
+          limit: 3,
+        })
+      ).leaders
     : [];
 
   return (
@@ -50,6 +55,10 @@ export default async function LeagueOverviewPage({
               <td>{league._count.players}</td>
             </tr>
             <tr>
+              <th>Weeks synced</th>
+              <td>{season?.weeks.length ?? 0}</td>
+            </tr>
+            <tr>
               <th>EA sync</th>
               <td>
                 {league.eaConnection
@@ -63,9 +72,19 @@ export default async function LeagueOverviewPage({
       </section>
 
       <section className="panel">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Recent games
-        </h2>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "1rem",
+            alignItems: "baseline",
+          }}
+        >
+          <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
+            Recent games
+          </h2>
+          <Link href={`/leagues/${slug}/scores`}>All scores</Link>
+        </div>
         {recentGames.length === 0 ? (
           <div className="empty">
             No games yet. Connect EA and run a sync, or seed the demo league.
@@ -85,12 +104,54 @@ export default async function LeagueOverviewPage({
                 <tr key={game.id}>
                   <td>{game.week.label ?? game.week.number}</td>
                   <td>
-                    {game.awayTeam.abbr} @ {game.homeTeam.abbr}
+                    <Link href={`/leagues/${slug}/games/${game.id}`}>
+                      {game.awayTeam.abbr} @ {game.homeTeam.abbr}
+                    </Link>
                   </td>
                   <td>
                     {game.awayScore ?? "—"} – {game.homeScore ?? "—"}
                   </td>
                   <td>{game.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="panel">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "1rem",
+            alignItems: "baseline",
+          }}
+        >
+          <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
+            Passing leaders
+          </h2>
+          <Link href={`/leagues/${slug}/stats?cat=passing`}>Full board</Link>
+        </div>
+        {passingLeaders.length === 0 ? (
+          <div className="empty">No passing stats logged yet.</div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Team</th>
+                <th>Yds</th>
+                <th>TD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {passingLeaders.map((entry) => (
+                <tr key={entry.playerId}>
+                  <td>{entry.name}</td>
+                  <td>{entry.teamAbbr ?? "FA"}</td>
+                  <td>{entry.primary}</td>
+                  <td>{entry.secondary}</td>
                 </tr>
               ))}
             </tbody>
