@@ -17,7 +17,7 @@ function isNextRedirect(error: unknown): boolean {
 
 /**
  * Kept in a separate server-actions module from league create so the dashboard
- * does not pull the EA/undici stack into the client module graph.
+ * does not pull the EA Blaze transport into the shared action module graph.
  */
 export async function triggerSyncAction(formData: FormData) {
   const session = await auth();
@@ -47,7 +47,7 @@ export async function triggerSyncAction(formData: FormData) {
   }
 
   try {
-    // Dynamic import keeps undici/Blaze out of any shared action module graph.
+    // Dynamic import keeps Blaze transport out of any shared action module graph.
     const { syncLeagueFromEa } = await import("@/server/ea/sync");
     await syncLeagueFromEa(leagueId, {
       scope,

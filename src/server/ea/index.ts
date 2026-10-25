@@ -8,8 +8,8 @@ export { getEaLoginUrl } from "./constants";
 export { extractAuthCode } from "./parse";
 
 /**
- * Live client (and undici Blaze transport) are loaded only when EA_CLIENT_MODE=live
- * so stub/dashboard paths never pull Node-only undici into the module graph.
+ * Live client is loaded only when EA_CLIENT_MODE=live so stub/dashboard paths
+ * stay free of Blaze/legacy-SSL transport code.
  */
 export function getEaClient(): EaClient {
   const mode = process.env.EA_CLIENT_MODE ?? "stub";
