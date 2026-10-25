@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { MembershipRole } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { triggerSyncAction } from "@/app/actions/leagues";
+import { triggerSyncAction } from "@/app/actions/sync";
 import {
   discoverEaPersonasAction,
   retryEaLeagueListAction,
@@ -225,13 +225,24 @@ export default async function SyncPage({
               </tbody>
             </table>
             {canManage ? (
-              <form action={triggerSyncAction}>
-                <input type="hidden" name="leagueId" value={league.id} />
-                <input type="hidden" name="slug" value={slug} />
-                <button type="submit" className="btn btn--primary">
-                  Run sync now
-                </button>
-              </form>
+              <div className="form-grid">
+                <form action={triggerSyncAction}>
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="scope" value="all" />
+                  <button type="submit" className="btn btn--primary">
+                    Sync full season
+                  </button>
+                </form>
+                <form action={triggerSyncAction}>
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="scope" value="week" />
+                  <button type="submit" className="btn">
+                    Sync current week only
+                  </button>
+                </form>
+              </div>
             ) : null}
           </>
         ) : (

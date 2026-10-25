@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isTransientBlazeCode } from "./blaze";
+import { isTransientBlazeCode } from "./blaze-errors";
 
 describe("isTransientBlazeCode", () => {
   it("treats ERR_SYSTEM / high-load codes as retryable", () => {

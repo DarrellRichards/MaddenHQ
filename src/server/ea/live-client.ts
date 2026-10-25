@@ -27,6 +27,24 @@ import type { EaClient, EaLeagueSummary, EaTokens, EaWeekExport } from "./types"
 
 type LeagueHub = Awaited<ReturnType<typeof getLeagueHub>>;
 
+type TeamRow = {
+  teamId: number;
+  abbrName: string;
+  cityName?: string;
+  displayName?: string;
+  divName?: string;
+};
+
+type RosterRow = {
+  rosterId?: number;
+  firstName?: string;
+  lastName?: string;
+  position?: string;
+  jerseyNum?: number;
+  playerBestOvr?: number;
+  teamAbbr?: string;
+};
+
 function toSessionTokens(tokens: EaTokens): EaSessionTokens {
   if (!tokens.console || !tokens.personaId) {
     throw new Error(
@@ -52,6 +70,10 @@ function fromSessionTokens(tokens: EaSessionTokens): EaTokens {
     personaId: tokens.personaId,
     blazeId: tokens.blazeId,
   };
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -132,12 +154,22 @@ export class LiveEaClient implements EaClient {
   ): Promise<EaWeekExport> {
     const sessionTokens = toSessionTokens(tokens);
     const { tokens: fresh, session } = await createBlazeSession(sessionTokens);
-    return this.exportWeekWithSession(
+    const hub = await getLeagueHub(fresh, session, Number(leagueId));
+    const { teams, rosters } = await this.pullTeamsAndRosters(
+      fresh,
+      session,
+      Number(leagueId),
+      hub,
+    );
+    return this.exportWeekStats(
       fresh,
       session,
       leagueId,
       StageIndex.SEASON,
       week - 1,
+      teams,
+      rosters,
+      hub,
     );
   }
 
@@ -166,43 +198,44 @@ export class LiveEaClient implements EaClient {
             },
           ];
 
+    // Rosters are season-scoped — pull once, reuse for every week.
+    // Re-fetching 32 teams × N weeks is what triggers EA ERR_SYSTEM high-load.
+    const { teams, rosters } = await this.pullTeamsAndRosters(
+      fresh,
+      session,
+      Number(leagueId),
+      hub,
+    );
+
     const exports: EaWeekExport[] = [];
     for (const week of weeksToPull) {
       // Skip Pro Bowl week index 21 when present
       if (week.weekIndex === 21) continue;
       exports.push(
-        await this.exportWeekWithSession(
+        await this.exportWeekStats(
           fresh,
           session,
           leagueId,
           week.stageIndex as StageIndex,
           week.weekIndex,
-          seasonYear,
+          teams,
+          rosters,
           hub,
+          seasonYear,
         ),
       );
+      // Brief pause between weeks to ease EA load.
+      await sleep(400);
     }
     return exports;
   }
 
-  private async exportWeekWithSession(
+  private async pullTeamsAndRosters(
     tokens: EaSessionTokens,
     session: BlazeSession,
-    leagueId: string,
-    stageIndex: StageIndex,
-    weekIndex: number,
-    seasonYearOverride?: number,
-    hubOverride?: LeagueHub,
-  ): Promise<EaWeekExport> {
-    const numericLeagueId = Number(leagueId);
-
-    const hub =
-      hubOverride ?? (await getLeagueHub(tokens, session, numericLeagueId));
-    const seasonYear =
-      seasonYearOverride ??
-      hub.responseInfo?.value?.careerHubInfo?.seasonInfo?.calendarYear ??
-      new Date().getFullYear();
-
+    numericLeagueId: number,
+    hub: LeagueHub,
+  ): Promise<{ teams: TeamRow[]; rosters: RosterRow[] }> {
     const teamsPayload = await exportTeams(tokens, session, numericLeagueId);
     const teams = teamsPayload.leagueTeamInfoList ?? [];
     const teamIndexById = new Map(
@@ -212,42 +245,110 @@ export class LiveEaClient implements EaClient {
       ]),
     );
 
-    const rosters: Array<{
-      rosterId?: number;
-      firstName?: string;
-      lastName?: string;
-      position?: string;
-      jerseyNum?: number;
-      playerBestOvr?: number;
-      teamAbbr?: string;
-    }> = [];
+    const rosters: RosterRow[] = [];
+    const rosterErrors: string[] = [];
 
-    for (const team of teams) {
+    for (let i = 0; i < teams.length; i++) {
+      const team = teams[i];
       const listIndex = teamIndexById.get(team.teamId) ?? 0;
-      const roster = await exportTeamRoster(
-        tokens,
-        session,
-        numericLeagueId,
-        team.teamId,
-        listIndex,
-      );
-      for (const player of roster.rosterInfoList ?? []) {
-        rosters.push({ ...player, teamAbbr: team.abbrName });
+      try {
+        const roster = await exportTeamRoster(
+          tokens,
+          session,
+          numericLeagueId,
+          team.teamId,
+          listIndex,
+        );
+        for (const player of roster.rosterInfoList ?? []) {
+          rosters.push({ ...player, teamAbbr: team.abbrName });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        rosterErrors.push(`${team.abbrName}: ${message.slice(0, 120)}`);
+      }
+      // Throttle roster pulls — 32 back-to-back calls trip EA high-load.
+      if (i < teams.length - 1) {
+        await sleep(350);
       }
     }
 
-    const freeAgents = await exportFreeAgents(tokens, session, numericLeagueId);
-    for (const player of freeAgents.rosterInfoList ?? []) {
-      rosters.push(player);
+    try {
+      const freeAgents = await exportFreeAgents(tokens, session, numericLeagueId);
+      for (const player of freeAgents.rosterInfoList ?? []) {
+        rosters.push(player);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      rosterErrors.push(`FA: ${message.slice(0, 120)}`);
     }
 
-    const [schedules, passing, rushing, receiving, defense] = await Promise.all([
-      exportSchedules(tokens, session, numericLeagueId, stageIndex, weekIndex),
-      exportPassing(tokens, session, numericLeagueId, stageIndex, weekIndex),
-      exportRushing(tokens, session, numericLeagueId, stageIndex, weekIndex),
-      exportReceiving(tokens, session, numericLeagueId, stageIndex, weekIndex),
-      exportDefense(tokens, session, numericLeagueId, stageIndex, weekIndex),
-    ]);
+    // Fail only if we got almost no roster data — partial leagues are still usable.
+    if (rosters.length === 0 && teams.length > 0) {
+      throw new Error(
+        `Blaze roster export failed for every team. Last errors: ${rosterErrors.slice(0, 3).join(" | ")}`,
+      );
+    }
+
+    return { teams, rosters };
+  }
+
+  private async exportWeekStats(
+    tokens: EaSessionTokens,
+    session: BlazeSession,
+    leagueId: string,
+    stageIndex: StageIndex,
+    weekIndex: number,
+    teams: TeamRow[],
+    rosters: RosterRow[],
+    hub: LeagueHub,
+    seasonYearOverride?: number,
+  ): Promise<EaWeekExport> {
+    const numericLeagueId = Number(leagueId);
+    const seasonYear =
+      seasonYearOverride ??
+      hub.responseInfo?.value?.careerHubInfo?.seasonInfo?.calendarYear ??
+      new Date().getFullYear();
+
+    // Sequential week exports — parallel Promise.all was another high-load trigger.
+    const schedules = await exportSchedules(
+      tokens,
+      session,
+      numericLeagueId,
+      stageIndex,
+      weekIndex,
+    );
+    await sleep(250);
+    const passing = await exportPassing(
+      tokens,
+      session,
+      numericLeagueId,
+      stageIndex,
+      weekIndex,
+    );
+    await sleep(250);
+    const rushing = await exportRushing(
+      tokens,
+      session,
+      numericLeagueId,
+      stageIndex,
+      weekIndex,
+    );
+    await sleep(250);
+    const receiving = await exportReceiving(
+      tokens,
+      session,
+      numericLeagueId,
+      stageIndex,
+      weekIndex,
+    );
+    await sleep(250);
+    const defense = await exportDefense(
+      tokens,
+      session,
+      numericLeagueId,
+      stageIndex,
+      weekIndex,
+    );
 
     return mapWeekExport({
       leagueId,

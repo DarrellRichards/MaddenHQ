@@ -6,6 +6,7 @@ import {
   StageIndex,
   type EaSystemConsole,
 } from "./constants";
+import { BlazeRpcError, isTransientBlazeCode } from "./blaze-errors";
 import { eaFetch, sanitizeJsonText } from "./http";
 import { calculateMessageAuth } from "./message-auth";
 import type { EaSessionTokens } from "./auth";
@@ -16,6 +17,8 @@ export type BlazeSession = {
   sessionKey: string;
   requestId: number;
 };
+
+export { BlazeRpcError, isTransientBlazeCode } from "./blaze-errors";
 
 type BlazeLoginResponse = {
   userLoginInfo?: {
@@ -28,28 +31,7 @@ type BlazeLoginResponse = {
   };
 };
 
-const TRANSIENT_BLAZE_CODES = new Set([
-  67606, // MCA_ERR_SERVER_ERROR
-  1073807360, // high load / timeout style (ERR_SYSTEM)
-]);
-
 const BLAZE_LOGIN_ATTEMPTS = 5;
-
-export function isTransientBlazeCode(code: number | undefined): boolean {
-  return code !== undefined && TRANSIENT_BLAZE_CODES.has(code);
-}
-
-export class BlazeRpcError extends Error {
-  errorcode?: number;
-  errorname?: string;
-
-  constructor(message: string, errorcode?: number, errorname?: string) {
-    super(message);
-    this.name = "BlazeRpcError";
-    this.errorcode = errorcode;
-    this.errorname = errorname;
-  }
-}
 
 function blazeHeaders(console: EaSystemConsole) {
   return {
@@ -340,44 +322,91 @@ export async function getLeagueHub(
   );
 }
 
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Refresh Blaze login and mutate the caller's session/token objects in place
+ * so subsequent exports pick up the new sessionKey.
+ */
+async function refreshBlazeSessionInPlace(
+  tokens: EaSessionTokens,
+  session: BlazeSession,
+): Promise<void> {
+  const refreshed = await createBlazeSession(tokens);
+  Object.assign(tokens, refreshed.tokens);
+  session.blazeId = refreshed.session.blazeId;
+  session.sessionKey = refreshed.session.sessionKey;
+  session.requestId = Math.max(
+    session.requestId,
+    refreshed.session.requestId,
+  );
+}
+
 async function getExportData<T>(
   tokens: EaSessionTokens,
   session: BlazeSession,
   exportType: LeagueExportType,
   payload: Record<string, unknown>,
-  retries = 5,
+  retries = 8,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < retries; attempt++) {
-    const res = await eaFetch(
-      `https://wal2.tools.gos.bio-iad.ea.com/wal/mca/${exportType}/${session.sessionKey}`,
-      {
-        blaze: true,
-        method: "POST",
-        headers: blazeHeaders(tokens.console),
-        body: JSON.stringify(payload),
-      },
-    );
-    const text = sanitizeJsonText(await res.text());
     try {
-      const parsed = JSON.parse(text) as T & {
-        error?: { errorcode?: number; errorname?: string };
-      };
+      const res = await eaFetch(
+        `https://wal2.tools.gos.bio-iad.ea.com/wal/mca/${exportType}/${session.sessionKey}`,
+        {
+          blaze: true,
+          method: "POST",
+          headers: blazeHeaders(tokens.console),
+          body: JSON.stringify(payload),
+        },
+      );
+      const text = sanitizeJsonText(await res.text());
+      let parsed: T & { error?: { errorcode?: number; errorname?: string } };
+      try {
+        parsed = JSON.parse(text) as typeof parsed;
+      } catch {
+        throw new Error(`Blaze export invalid JSON (${exportType}): ${text.slice(0, 200)}`);
+      }
+
       if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error) {
         const code = parsed.error.errorcode;
         if (isTransientBlazeCode(code) && attempt < retries - 1) {
-          await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+          // EA high load — back off harder and mint a fresh Blaze session.
+          await sleep(2000 * 2 ** attempt);
+          try {
+            await refreshBlazeSessionInPlace(tokens, session);
+          } catch {
+            // Keep retrying with the existing session if login is also flaky.
+          }
           continue;
         }
-        throw new Error(`Blaze export error (${exportType}): ${text.slice(0, 400)}`);
+        throw new Error(
+          `Blaze export error (${exportType}): ${text.slice(0, 400)}`,
+        );
       }
       return parsed as T;
     } catch (error) {
       lastError = error;
-      if (attempt < retries - 1) {
-        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable =
+        /1073807360|ERR_SYSTEM|MCA_ERR_SERVER|invalid JSON|fetch failed|ECONNRESET|ETIMEDOUT/i.test(
+          message,
+        );
+      if (retryable && attempt < retries - 1) {
+        await sleep(2000 * 2 ** attempt);
+        try {
+          await refreshBlazeSessionInPlace(tokens, session);
+        } catch {
+          // ignore
+        }
         continue;
       }
+      throw error instanceof Error
+        ? error
+        : new Error(`Blaze export failed for ${exportType}`);
     }
   }
   throw lastError instanceof Error
