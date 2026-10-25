@@ -6,7 +6,14 @@ import type { EaPersonaOption } from "./auth";
 const TEMP_COOKIE = "maddenhq_ea_temp";
 const SESSION_COOKIE = "maddenhq_ea_session";
 const PERSONAS_COOKIE = "maddenhq_ea_personas";
+const LEAGUES_COOKIE = "maddenhq_ea_leagues";
 const MAX_AGE = 60 * 10;
+
+export type PendingEaLeague = {
+  id: string;
+  name: string;
+  seasonText?: string;
+};
 
 type TempAuth = {
   tempAccessToken: string;
@@ -94,9 +101,32 @@ export async function getPendingEaTokens(): Promise<EaTokens | null> {
   }
 }
 
+export async function setPendingLeagues(leagues: PendingEaLeague[]) {
+  const jar = await cookies();
+  jar.set(LEAGUES_COOKIE, encryptSecret(JSON.stringify(leagues)), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: MAX_AGE,
+  });
+}
+
+export async function getPendingLeagues(): Promise<PendingEaLeague[]> {
+  const jar = await cookies();
+  const raw = jar.get(LEAGUES_COOKIE)?.value;
+  if (!raw) return [];
+  try {
+    return JSON.parse(decryptSecret(raw)) as PendingEaLeague[];
+  } catch {
+    return [];
+  }
+}
+
 export async function clearPendingEaCookies() {
   const jar = await cookies();
   jar.delete(TEMP_COOKIE);
   jar.delete(SESSION_COOKIE);
   jar.delete(PERSONAS_COOKIE);
+  jar.delete(LEAGUES_COOKIE);
 }

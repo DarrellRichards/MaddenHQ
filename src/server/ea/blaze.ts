@@ -88,6 +88,18 @@ export async function createBlazeSession(
   };
 }
 
+export class BlazeRpcError extends Error {
+  errorcode?: number;
+  errorname?: string;
+
+  constructor(message: string, errorcode?: number, errorname?: string) {
+    super(message);
+    this.name = "BlazeRpcError";
+    this.errorcode = errorcode;
+    this.errorname = errorname;
+  }
+}
+
 async function sendProcessRequest<T>(
   tokens: EaSessionTokens,
   session: BlazeSession,
@@ -128,11 +140,54 @@ async function sendProcessRequest<T>(
     },
   );
   const text = sanitizeJsonText(await res.text());
-  const parsed = JSON.parse(text) as T & { error?: unknown };
+  const parsed = JSON.parse(text) as T & {
+    error?: { errorcode?: number; errorname?: string };
+  };
   if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error) {
-    throw new Error(`Blaze RPC error: ${text.slice(0, 500)}`);
+    throw new BlazeRpcError(
+      `Blaze RPC error: ${text.slice(0, 500)}`,
+      parsed.error.errorcode,
+      parsed.error.errorname,
+    );
   }
   return parsed as T;
+}
+
+const TRANSIENT_BLAZE_CODES = new Set([
+  67606, // MCA_ERR_SERVER_ERROR
+  1073807360, // high load / timeout style
+]);
+
+async function withBlazeRpcRetry<T>(
+  tokens: EaSessionTokens,
+  session: BlazeSession,
+  run: (active: { tokens: EaSessionTokens; session: BlazeSession }) => Promise<T>,
+): Promise<T> {
+  let activeTokens = tokens;
+  let activeSession = session;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await run({ tokens: activeTokens, session: activeSession });
+    } catch (error) {
+      lastError = error;
+      const code = error instanceof BlazeRpcError ? error.errorcode : undefined;
+      if (code && TRANSIENT_BLAZE_CODES.has(code) && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 750 * 2 ** attempt));
+        const refreshed = await createBlazeSession(activeTokens);
+        activeTokens = refreshed.tokens;
+        activeSession = {
+          ...refreshed.session,
+          requestId: Math.max(activeSession.requestId, refreshed.session.requestId),
+        };
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Blaze RPC failed");
 }
 
 export async function getMyLeagues(
@@ -146,24 +201,27 @@ export async function getMyLeagues(
     seasonText?: string;
   }>
 > {
-  const response = await sendProcessRequest<{
-    responseInfo?: {
-      value?: {
-        leagues?: Array<{
-          leagueId: number;
-          leagueName: string;
-          calendarYear?: number;
-          seasonText?: string;
-        }>;
+  // Companion uses franchisemode for league list/hub RPC (not careermode).
+  const response = await withBlazeRpcRetry(tokens, session, ({ tokens: t, session: s }) =>
+    sendProcessRequest<{
+      responseInfo?: {
+        value?: {
+          leagues?: Array<{
+            leagueId: number;
+            leagueName: string;
+            calendarYear?: number;
+            seasonText?: string;
+          }>;
+        };
       };
-    };
-  }>(tokens, session, {
-    commandName: "Mobile_GetMyLeagues",
-    componentId: 2060,
-    commandId: 801,
-    componentName: "careermode",
-    requestPayload: {},
-  });
+    }>(t, s, {
+      commandName: "Mobile_GetMyLeagues",
+      componentId: 2060,
+      commandId: 801,
+      componentName: "franchisemode",
+      requestPayload: {},
+    }),
+  );
 
   return response.responseInfo?.value?.leagues ?? [];
 }
@@ -173,36 +231,38 @@ export async function getLeagueHub(
   session: BlazeSession,
   leagueId: number,
 ) {
-  return sendProcessRequest<{
-    responseInfo?: {
-      value?: {
-        careerHubInfo?: {
-          seasonInfo?: {
-            calendarYear?: number;
-            seasonWeek?: number;
-            seasonWeekType?: number;
+  return withBlazeRpcRetry(tokens, session, ({ tokens: t, session: s }) =>
+    sendProcessRequest<{
+      responseInfo?: {
+        value?: {
+          careerHubInfo?: {
+            seasonInfo?: {
+              calendarYear?: number;
+              seasonWeek?: number;
+              seasonWeekType?: number;
+            };
           };
+          teamIdInfoList?: Array<{
+            teamId: number;
+            teamIndex: number;
+            shortName?: string;
+            displayName?: string;
+          }>;
+          availableWeekInfoList?: Array<{
+            stageIndex: number;
+            weekIndex: number;
+            weekTitle?: string;
+          }>;
         };
-        teamIdInfoList?: Array<{
-          teamId: number;
-          teamIndex: number;
-          shortName?: string;
-          displayName?: string;
-        }>;
-        availableWeekInfoList?: Array<{
-          stageIndex: number;
-          weekIndex: number;
-          weekTitle?: string;
-        }>;
       };
-    };
-  }>(tokens, session, {
-    commandName: "Mobile_Career_GetLeagueHub",
-    componentId: 2060,
-    commandId: 811,
-    componentName: "careermode",
-    requestPayload: { leagueId },
-  });
+    }>(t, s, {
+      commandName: "Mobile_Career_GetLeagueHub",
+      componentId: 2060,
+      commandId: 811,
+      componentName: "franchisemode",
+      requestPayload: { leagueId },
+    }),
+  );
 }
 
 async function getExportData<T>(

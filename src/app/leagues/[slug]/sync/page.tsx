@@ -5,22 +5,23 @@ import { prisma } from "@/lib/prisma";
 import { triggerSyncAction } from "@/app/actions/leagues";
 import {
   discoverEaPersonasAction,
+  retryEaLeagueListAction,
   selectEaLeagueAction,
   selectEaPersonaAction,
 } from "@/app/actions/ea-connect";
 import { getEaClient } from "@/server/ea";
 import {
   getPendingEaTokens,
+  getPendingLeagues,
   getPendingPersonas,
 } from "@/server/ea/pending-cookie";
-import { createBlazeSession, getMyLeagues } from "@/server/ea/blaze";
 
 export default async function SyncPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ step?: string }>;
+  searchParams: Promise<{ step?: string; error?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -28,7 +29,7 @@ export default async function SyncPage({
   }
 
   const { slug } = await params;
-  const { step } = await searchParams;
+  const { step, error } = await searchParams;
   const league = await prisma.league.findUnique({
     where: { slug },
     include: { eaConnection: true },
@@ -51,31 +52,8 @@ export default async function SyncPage({
 
   const pendingPersonas = step === "persona" ? await getPendingPersonas() : [];
   const pendingTokens = step === "league" ? await getPendingEaTokens() : null;
-
-  let pendingLeagues: Array<{ id: string; name: string; seasonText?: string }> = [];
-  if (pendingTokens) {
-    if (mode === "stub") {
-      pendingLeagues = (await client.listLeagues(pendingTokens)).map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        seasonText: entry.seasonText,
-      }));
-    } else if (pendingTokens.console && pendingTokens.personaId) {
-      const { tokens, session: blaze } = await createBlazeSession({
-        accessToken: pendingTokens.accessToken,
-        refreshToken: pendingTokens.refreshToken,
-        expiresAt: pendingTokens.expiresAt ?? new Date(0),
-        console: pendingTokens.console,
-        personaId: pendingTokens.personaId,
-        blazeId: pendingTokens.blazeId,
-      });
-      pendingLeagues = (await getMyLeagues(tokens, blaze)).map((entry) => ({
-        id: String(entry.leagueId),
-        name: entry.leagueName,
-        seasonText: entry.seasonText,
-      }));
-    }
-  }
+  const pendingLeagues = step === "league" ? await getPendingLeagues() : [];
+  const activeStep = step ?? "connect";
 
   return (
     <div className="stack">
@@ -90,9 +68,22 @@ export default async function SyncPage({
           <code>EA_CLIENT_MODE=live</code> for real Companion/Blaze sync).
         </p>
 
+        {error ? (
+          <div
+            className="panel"
+            style={{ borderColor: "var(--accent)", color: "var(--accent)", margin: 0 }}
+          >
+            <strong>EA sync issue:</strong> {error}
+            <p className="muted" style={{ margin: "0.5rem 0 0", color: "inherit" }}>
+              EA sometimes returns temporary server errors. Retry in a minute, or enter your
+              EA league id manually below if you already know it.
+            </p>
+          </div>
+        ) : null}
+
         {!canManage ? (
           <div className="empty">Only commissioners can connect EA for this league.</div>
-        ) : step === "persona" ? (
+        ) : activeStep === "persona" ? (
           <form action={selectEaPersonaAction} className="form-grid">
             <input type="hidden" name="leagueId" value={league.id} />
             <input type="hidden" name="slug" value={slug} />
@@ -113,28 +104,58 @@ export default async function SyncPage({
               Continue
             </button>
           </form>
-        ) : step === "league" ? (
-          <form action={selectEaLeagueAction} className="form-grid">
-            <input type="hidden" name="leagueId" value={league.id} />
-            <input type="hidden" name="slug" value={slug} />
-            <label>
-              EA franchise league
-              <select name="eaLeagueId" required defaultValue="">
-                <option value="" disabled>
-                  Select league…
-                </option>
-                {pendingLeagues.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.name}
-                    {entry.seasonText ? ` · ${entry.seasonText}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" className="btn btn--accent">
-              Save EA connection
-            </button>
-          </form>
+        ) : activeStep === "league" ? (
+          <div className="stack">
+            {pendingLeagues.length > 0 ? (
+              <form action={selectEaLeagueAction} className="form-grid">
+                <input type="hidden" name="leagueId" value={league.id} />
+                <input type="hidden" name="slug" value={slug} />
+                <label>
+                  EA franchise league
+                  <select name="eaLeagueId" required defaultValue="">
+                    <option value="" disabled>
+                      Select league…
+                    </option>
+                    {pendingLeagues.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                        {entry.seasonText ? ` · ${entry.seasonText}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" className="btn btn--accent">
+                  Save EA connection
+                </button>
+              </form>
+            ) : (
+              <>
+                <div className="empty">
+                  No EA leagues were loaded
+                  {pendingTokens ? " (session is saved)." : "."} Retry the Blaze list, or
+                  paste the numeric EA league id if you already know it.
+                </div>
+                <form action={retryEaLeagueListAction}>
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <input type="hidden" name="slug" value={slug} />
+                  <button type="submit" className="btn btn--primary">
+                    Retry league list
+                  </button>
+                </form>
+                <form action={selectEaLeagueAction} className="form-grid">
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <input type="hidden" name="slug" value={slug} />
+                  <label>
+                    EA league id (manual)
+                    <input name="eaLeagueId" required placeholder="e.g. 2890093" />
+                  </label>
+                  <button type="submit" className="btn btn--accent">
+                    Save with manual league id
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
         ) : (
           <div className="stack">
             <a
