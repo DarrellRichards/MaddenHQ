@@ -23,18 +23,20 @@ function formatSyncError(error: unknown): string {
   if (/1073807360|ERR_SYSTEM|unusually high server load/i.test(raw)) {
     return "EA Blaze is under high load (roster/stats export). Wait a minute and try Sync current week, or retry full season later.";
   }
+  if (/transaction|timed out|already closed/i.test(raw)) {
+    return "Database sync timed out while writing league data. Retry Sync current week, then full season.";
+  }
   const argHint = raw.match(/Argument `[^=\n]+`[^\n]*/);
   if (argHint) {
     return `Database sync error: ${argHint[0].trim()}`.slice(0, 280);
   }
-  const invocation = raw.match(/Invalid `[^`]+` invocation/);
-  if (invocation) {
-    return `Database sync error: ${invocation[0]}. Check server logs for details.`.slice(
-      0,
-      280,
-    );
+  // Prisma validation dumps are multi-line; keep a compact actionable slice.
+  const compact = raw.replace(/\s+/g, " ").trim();
+  if (/Invalid `[^`]+` invocation/i.test(compact)) {
+    const detail = compact.slice(0, 220);
+    return `Database sync error: ${detail}`.slice(0, 280);
   }
-  return raw.replace(/\s+/g, " ").slice(0, 280);
+  return compact.slice(0, 280);
 }
 
 /**

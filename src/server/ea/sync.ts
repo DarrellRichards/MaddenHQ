@@ -6,6 +6,14 @@ import { dedupeExportPlayers } from "./player-dedupe";
 import type { EaWeekExport } from "./types";
 
 type ExportPlayer = EaWeekExport["players"][number];
+type DbClient = Prisma.TransactionClient | typeof prisma;
+
+const SYNC_TX_OPTIONS = {
+  // Full rosters are large; default 5s interactive tx times out and later
+  // findFirst/update calls fail with opaque "Invalid invocation" errors.
+  maxWait: 15_000,
+  timeout: 180_000,
+} as const;
 
 function isUniqueViolation(error: unknown): boolean {
   return (
@@ -16,31 +24,45 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+function asOptionalInt(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
 async function findPlayerByRosterId(
-  tx: Prisma.TransactionClient,
+  db: DbClient,
   leagueId: string,
   rosterId: string,
 ) {
-  // findFirst — findUnique on @@unique([leagueId, rosterId]) is unsafe while rosterId is optional.
-  return tx.player.findFirst({
-    where: { leagueId, rosterId },
+  return db.player.findFirst({
+    where: {
+      leagueId: String(leagueId),
+      rosterId: String(rosterId),
+    },
   });
 }
 
 async function findPlayerByName(
-  tx: Prisma.TransactionClient,
+  db: DbClient,
   leagueId: string,
   firstName: string,
   lastName: string,
   position: string,
 ) {
-  return tx.player.findFirst({
-    where: { leagueId, firstName, lastName, position },
+  return db.player.findFirst({
+    where: {
+      leagueId: String(leagueId),
+      firstName: String(firstName),
+      lastName: String(lastName),
+      position: String(position),
+    },
   });
 }
 
 async function upsertSyncedPlayer(
-  tx: Prisma.TransactionClient,
+  db: DbClient,
   leagueId: string,
   player: ExportPlayer,
   teamByAbbr: Map<string, string>,
@@ -54,15 +76,16 @@ async function upsertSyncedPlayer(
 
   const teamId = player.teamAbbr ? (teamByAbbr.get(player.teamAbbr) ?? null) : null;
   const rosterId = player.rosterId?.trim() || null;
+  const overall = asOptionalInt(player.overall);
+  const jerseyNumber = asOptionalInt(player.jerseyNumber);
 
   let existing = rosterId
-    ? await findPlayerByRosterId(tx, leagueId, rosterId)
+    ? await findPlayerByRosterId(db, leagueId, rosterId)
     : null;
 
-  // Reconcile seeded / prior rows that lack rosterId.
   if (!existing) {
     existing = await findPlayerByName(
-      tx,
+      db,
       leagueId,
       firstName,
       lastName,
@@ -70,9 +93,8 @@ async function upsertSyncedPlayer(
     );
   }
 
-  // If name match would steal another row's rosterId, keep the rosterId row canonical.
   if (existing && rosterId && existing.rosterId !== rosterId) {
-    const byRoster = await findPlayerByRosterId(tx, leagueId, rosterId);
+    const byRoster = await findPlayerByRosterId(db, leagueId, rosterId);
     if (byRoster) {
       existing = byRoster;
     }
@@ -80,8 +102,8 @@ async function upsertSyncedPlayer(
 
   const data = {
     teamId,
-    overall: player.overall ?? null,
-    jerseyNumber: player.jerseyNumber ?? null,
+    overall,
+    jerseyNumber,
     firstName,
     lastName,
     position,
@@ -89,14 +111,14 @@ async function upsertSyncedPlayer(
   };
 
   if (existing) {
-    return tx.player.update({
+    return db.player.update({
       where: { id: existing.id },
       data,
     });
   }
 
   try {
-    return await tx.player.create({
+    return await db.player.create({
       data: {
         leagueId,
         ...data,
@@ -105,25 +127,23 @@ async function upsertSyncedPlayer(
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
 
-    // Unique race / missed lookup — resolve and update instead of failing the sync.
     const recovered =
       (rosterId
-        ? await findPlayerByRosterId(tx, leagueId, rosterId)
+        ? await findPlayerByRosterId(db, leagueId, rosterId)
         : null) ??
-      (await findPlayerByName(tx, leagueId, firstName, lastName, position));
+      (await findPlayerByName(db, leagueId, firstName, lastName, position));
 
     if (!recovered) throw error;
 
-    // If create lost on rosterId but recovered by name (or vice versa), still update.
     if (rosterId && recovered.rosterId && recovered.rosterId !== rosterId) {
-      const owner = await findPlayerByRosterId(tx, leagueId, rosterId);
+      const owner = await findPlayerByRosterId(db, leagueId, rosterId);
       if (owner) {
-        return tx.player.update({
+        return db.player.update({
           where: { id: owner.id },
           data: {
             teamId,
-            overall: player.overall ?? null,
-            jerseyNumber: player.jerseyNumber ?? null,
+            overall,
+            jerseyNumber,
             firstName,
             lastName,
             position,
@@ -132,12 +152,12 @@ async function upsertSyncedPlayer(
       }
     }
 
-    return tx.player.update({
+    return db.player.update({
       where: { id: recovered.id },
       data: {
         teamId,
-        overall: player.overall ?? null,
-        jerseyNumber: player.jerseyNumber ?? null,
+        overall,
+        jerseyNumber,
         rosterId: rosterId ?? recovered.rosterId,
         firstName,
         lastName,
@@ -151,7 +171,6 @@ async function withLeagueSyncLock<T>(
   leagueId: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  // Serialize syncs per league so concurrent commissioner/CLI runs cannot double-insert.
   await prisma.$executeRaw`SELECT pg_advisory_lock(hashtext(${leagueId}))`;
   try {
     return await fn();
@@ -160,13 +179,145 @@ async function withLeagueSyncLock<T>(
   }
 }
 
-async function upsertExport(
-  tx: Prisma.TransactionClient,
+async function upsertTeams(
+  db: DbClient,
+  leagueId: string,
+  teams: EaWeekExport["teams"],
+) {
+  const teamByAbbr = new Map<string, string>();
+  for (const team of teams) {
+    const abbr = team.abbr?.trim();
+    if (!abbr) continue;
+    const row = await db.team.upsert({
+      where: { leagueId_abbr: { leagueId, abbr } },
+      create: {
+        leagueId,
+        abbr,
+        name: team.name || abbr,
+        city: team.city,
+        conference: team.conference,
+        division: team.division,
+      },
+      update: {
+        name: team.name || abbr,
+        city: team.city,
+        conference: team.conference,
+        division: team.division,
+      },
+    });
+    teamByAbbr.set(abbr, row.id);
+  }
+  return teamByAbbr;
+}
+
+async function upsertPlayers(
+  db: DbClient,
+  leagueId: string,
+  players: ExportPlayer[],
+  teamByAbbr: Map<string, string>,
+) {
+  const playerByKey = new Map<string, string>();
+  for (const player of dedupeExportPlayers(players)) {
+    const row = await upsertSyncedPlayer(db, leagueId, player, teamByAbbr);
+    if (!row) continue;
+    const rosterId = player.rosterId?.trim() || null;
+    const key =
+      rosterId ?? `${player.lastName}|${player.firstName}|${player.position}`;
+    playerByKey.set(key, row.id);
+    if (rosterId) {
+      playerByKey.set(rosterId, row.id);
+    }
+  }
+  return playerByKey;
+}
+
+async function loadPlayerKeyMap(leagueId: string) {
+  const rows = await prisma.player.findMany({
+    where: { leagueId },
+    select: {
+      id: true,
+      rosterId: true,
+      firstName: true,
+      lastName: true,
+      position: true,
+    },
+  });
+  const playerByKey = new Map<string, string>();
+  for (const row of rows) {
+    if (row.rosterId) playerByKey.set(row.rosterId, row.id);
+    playerByKey.set(
+      `${row.lastName}|${row.firstName}|${row.position}`,
+      row.id,
+    );
+  }
+  return playerByKey;
+}
+
+async function upsertWeekGames(
+  db: DbClient,
+  seasonId: string,
+  weekId: string,
+  data: EaWeekExport,
+  teamByAbbr: Map<string, string>,
+  playerByKey: Map<string, string>,
+) {
+  for (const game of data.games) {
+    const homeTeamId = teamByAbbr.get(game.homeAbbr);
+    const awayTeamId = teamByAbbr.get(game.awayAbbr);
+    if (!homeTeamId || !awayTeamId) continue;
+
+    const gameRow = await db.game.upsert({
+      where: {
+        weekId_homeTeamId_awayTeamId: {
+          weekId,
+          homeTeamId,
+          awayTeamId,
+        },
+      },
+      create: {
+        seasonId,
+        weekId,
+        homeTeamId,
+        awayTeamId,
+        homeScore: asOptionalInt(game.homeScore),
+        awayScore: asOptionalInt(game.awayScore),
+        status: game.status,
+      },
+      update: {
+        homeScore: asOptionalInt(game.homeScore),
+        awayScore: asOptionalInt(game.awayScore),
+        status: game.status,
+      },
+    });
+
+    for (const stat of data.playerGameStats) {
+      if (stat.homeAbbr !== game.homeAbbr || stat.awayAbbr !== game.awayAbbr) {
+        continue;
+      }
+      const playerId = playerByKey.get(stat.playerKey);
+      if (!playerId) continue;
+
+      await db.playerGameStat.upsert({
+        where: { gameId_playerId: { gameId: gameRow.id, playerId } },
+        create: {
+          gameId: gameRow.id,
+          playerId,
+          teamId: stat.homeOrAway === "home" ? homeTeamId : awayTeamId,
+          stats: stat.stats as Prisma.InputJsonValue,
+        },
+        update: { stats: stat.stats as Prisma.InputJsonValue },
+      });
+    }
+  }
+}
+
+async function upsertSeasonAndWeek(
+  db: DbClient,
   leagueId: string,
   data: EaWeekExport,
   currentSeasonYear: number,
 ) {
-  const season = await tx.season.upsert({
+  const season = await db.season.upsert({
     where: { leagueId_year: { leagueId, year: data.seasonYear } },
     create: {
       leagueId,
@@ -179,7 +330,7 @@ async function upsertExport(
     },
   });
 
-  const week = await tx.week.upsert({
+  const week = await db.week.upsert({
     where: { seasonId_number: { seasonId: season.id, number: data.weekNumber } },
     create: {
       seasonId: season.id,
@@ -188,89 +339,6 @@ async function upsertExport(
     },
     update: {},
   });
-
-  const teamByAbbr = new Map<string, string>();
-  for (const team of data.teams) {
-    const row = await tx.team.upsert({
-      where: { leagueId_abbr: { leagueId, abbr: team.abbr } },
-      create: {
-        leagueId,
-        abbr: team.abbr,
-        name: team.name,
-        city: team.city,
-        conference: team.conference,
-        division: team.division,
-      },
-      update: {
-        name: team.name,
-        city: team.city,
-        conference: team.conference,
-        division: team.division,
-      },
-    });
-    teamByAbbr.set(team.abbr, row.id);
-  }
-
-  const playerByKey = new Map<string, string>();
-  for (const player of dedupeExportPlayers(data.players)) {
-    const row = await upsertSyncedPlayer(tx, leagueId, player, teamByAbbr);
-    if (!row) continue;
-    const key =
-      (player.rosterId?.trim() || null) ??
-      `${player.lastName}|${player.firstName}|${player.position}`;
-    playerByKey.set(key, row.id);
-    // Stats often key only by rosterId — keep that alias even when name key differs.
-    if (player.rosterId?.trim()) {
-      playerByKey.set(player.rosterId.trim(), row.id);
-    }
-  }
-
-  for (const game of data.games) {
-    const homeTeamId = teamByAbbr.get(game.homeAbbr);
-    const awayTeamId = teamByAbbr.get(game.awayAbbr);
-    if (!homeTeamId || !awayTeamId) continue;
-
-    const gameRow = await tx.game.upsert({
-      where: {
-        weekId_homeTeamId_awayTeamId: {
-          weekId: week.id,
-          homeTeamId,
-          awayTeamId,
-        },
-      },
-      create: {
-        seasonId: season.id,
-        weekId: week.id,
-        homeTeamId,
-        awayTeamId,
-        homeScore: game.homeScore,
-        awayScore: game.awayScore,
-        status: game.status,
-      },
-      update: {
-        homeScore: game.homeScore,
-        awayScore: game.awayScore,
-        status: game.status,
-      },
-    });
-
-    for (const stat of data.playerGameStats) {
-      if (stat.homeAbbr !== game.homeAbbr || stat.awayAbbr !== game.awayAbbr) continue;
-      const playerId = playerByKey.get(stat.playerKey);
-      if (!playerId) continue;
-
-      await tx.playerGameStat.upsert({
-        where: { gameId_playerId: { gameId: gameRow.id, playerId } },
-        create: {
-          gameId: gameRow.id,
-          playerId,
-          teamId: stat.homeOrAway === "home" ? homeTeamId : awayTeamId,
-          stats: stat.stats,
-        },
-        update: { stats: stat.stats },
-      });
-    }
-  }
 
   return { seasonId: season.id, weekId: week.id };
 }
@@ -305,7 +373,6 @@ export async function syncLeagueFromEa(
       blazeId: connection.blazeId ?? undefined,
     };
 
-    // Refresh early so long exportAll runs use a valid access token.
     tokens = {
       ...tokens,
       ...(await client.refreshTokens(tokens)),
@@ -338,29 +405,59 @@ export async function syncLeagueFromEa(
           ? Math.max(...exports.map((weekExport) => weekExport.seasonYear))
           : new Date().getFullYear();
 
-      await prisma.$transaction(async (tx) => {
-        // Clear current flags first so only the chosen season remains current.
-        await tx.season.updateMany({
-          where: { leagueId, isCurrent: true },
-          data: { isCurrent: false },
-        });
+      // Clear current season flags once up front (outside per-week txs).
+      await prisma.season.updateMany({
+        where: { leagueId, isCurrent: true },
+        data: { isCurrent: false },
+      });
 
-        for (const weekExport of exports) {
-          await upsertExport(tx, leagueId, weekExport, currentSeasonYear);
-        }
+      // Teams + players once from the richest roster snapshot (first export).
+      // Re-running this inside every week blew past Prisma's interactive tx timeout.
+      const rosterSource = exports[0];
+      if (rosterSource) {
+        await prisma.$transaction(async (tx) => {
+          const teamByAbbr = await upsertTeams(tx, leagueId, rosterSource.teams);
+          await upsertPlayers(tx, leagueId, rosterSource.players, teamByAbbr);
+        }, SYNC_TX_OPTIONS);
+      }
 
-        await tx.eaConnection.update({
-          where: { id: connection.id },
-          data: {
-            eaLeagueId,
-            accessTokenEncrypted: encryptSecret(tokens.accessToken),
-            refreshTokenEncrypted: encryptSecret(tokens.refreshToken),
-            accessTokenExpiresAt: tokens.expiresAt,
-            blazeId: tokens.blazeId ?? connection.blazeId,
-            lastSyncAt: new Date(),
-            lastSyncStatus: scope === "week" ? "ok (week)" : "ok",
-          },
-        });
+      const teamRows = await prisma.team.findMany({
+        where: { leagueId },
+        select: { id: true, abbr: true },
+      });
+      const teamByAbbr = new Map(teamRows.map((team) => [team.abbr, team.id]));
+      const playerByKey = await loadPlayerKeyMap(leagueId);
+
+      for (const weekExport of exports) {
+        await prisma.$transaction(async (tx) => {
+          const { seasonId, weekId } = await upsertSeasonAndWeek(
+            tx,
+            leagueId,
+            weekExport,
+            currentSeasonYear,
+          );
+          await upsertWeekGames(
+            tx,
+            seasonId,
+            weekId,
+            weekExport,
+            teamByAbbr,
+            playerByKey,
+          );
+        }, SYNC_TX_OPTIONS);
+      }
+
+      await prisma.eaConnection.update({
+        where: { id: connection.id },
+        data: {
+          eaLeagueId,
+          accessTokenEncrypted: encryptSecret(tokens.accessToken),
+          refreshTokenEncrypted: encryptSecret(tokens.refreshToken),
+          accessTokenExpiresAt: tokens.expiresAt,
+          blazeId: tokens.blazeId ?? connection.blazeId,
+          lastSyncAt: new Date(),
+          lastSyncStatus: scope === "week" ? "ok (week)" : "ok",
+        },
       });
 
       return { weeks: exports.length, scope };
@@ -369,7 +466,7 @@ export async function syncLeagueFromEa(
         where: { id: connection.id },
         data: {
           lastSyncAt: new Date(),
-          lastSyncStatus: error instanceof Error ? error.message : "error",
+          lastSyncStatus: error instanceof Error ? error.message.slice(0, 500) : "error",
         },
       });
       throw error;
