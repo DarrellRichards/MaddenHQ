@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { suffix: "", label: "Overview" },
   { suffix: "/standings", label: "Standings" },
+  { suffix: "/scores", label: "Scores" },
   { suffix: "/stats", label: "Stats" },
   { suffix: "/trades", label: "Trades" },
   { suffix: "/awards", label: "Awards" },
@@ -23,7 +24,9 @@ export function LeagueNav({ slug }: { slug: string }) {
         const isActive =
           tab.suffix === ""
             ? pathname === base
-            : pathname.startsWith(href);
+            : tab.suffix === "/scores"
+              ? pathname.startsWith(href) || pathname.startsWith(`${base}/games/`)
+              : pathname.startsWith(href);
         return (
           <Link
             key={tab.label}

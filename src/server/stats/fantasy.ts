@@ -2,9 +2,13 @@
 
 export type StatBag = Record<string, number | string | undefined>;
 
-function num(stats: StatBag, key: string): number {
+export function statNumber(stats: StatBag, key: string): number {
   const value = stats[key];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function num(stats: StatBag, key: string): number {
+  return statNumber(stats, key);
 }
 
 export function fantasyPoints(stats: StatBag): number {

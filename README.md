@@ -13,7 +13,7 @@ Track stats across leagues (per game, per player, year over year), sync from EA,
 - Standings from synced games
 - Rule-based weekly + season awards (LLM optional later)
 - Trade proposals with rule-based valuation (LLM optional later)
-- Per-game / per-player / YoY leaderboards (expanding)
+- Scores by week, box scores, and pass/rush/rec/def/fantasy leaderboards
 - Donations via GitHub Sponsors + optional on-site Stripe link
 
 ## Stack
