@@ -9,12 +9,11 @@ Track stats across leagues (per game, per player, year over year), sync from EA,
 ## Features (roadmap)
 
 - Multi-league creation and membership
-- EA token sync (no EA password storage)
-- Per-game / per-player / YoY stats
-- AI-assisted trade valuation
-- Weekly Game of the Week (AI)
-- Weekly AFC/NFC Offense & Defense Players of the Week (AI)
-- Yearly league awards (AI)
+- EA token sync (no EA password storage) — full season + current-week sync
+- Standings from synced games
+- Rule-based weekly + season awards (LLM optional later)
+- Trade proposals with rule-based valuation (LLM optional later)
+- Per-game / per-player / YoY leaderboards (expanding)
 - Donations via GitHub Sponsors + optional on-site Stripe link
 
 ## Stack

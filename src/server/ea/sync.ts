@@ -171,7 +171,13 @@ async function upsertExport(
   return { seasonId: season.id, weekId: week.id };
 }
 
-export async function syncLeagueFromEa(leagueId: string) {
+export type SyncScope = "all" | "week";
+
+export async function syncLeagueFromEa(
+  leagueId: string,
+  options: { scope?: SyncScope; weekNumber?: number } = {},
+) {
+  const scope = options.scope ?? "all";
   const connection = await prisma.eaConnection.findUnique({ where: { leagueId } });
   if (!connection) {
     throw new Error("No EA connection for this league");
@@ -207,7 +213,22 @@ export async function syncLeagueFromEa(leagueId: string) {
     }
 
     try {
-      const exports = await client.exportAll(tokens, eaLeagueId);
+      let exports: EaWeekExport[];
+      if (scope === "week") {
+        const weekNumber =
+          options.weekNumber ??
+          (
+            await prisma.week.findFirst({
+              where: { season: { leagueId, isCurrent: true } },
+              orderBy: { number: "desc" },
+            })
+          )?.number ??
+          1;
+        exports = [await client.exportWeek(tokens, eaLeagueId, weekNumber)];
+      } else {
+        exports = await client.exportAll(tokens, eaLeagueId);
+      }
+
       const currentSeasonYear =
         exports.length > 0
           ? Math.max(...exports.map((weekExport) => weekExport.seasonYear))
@@ -233,12 +254,12 @@ export async function syncLeagueFromEa(leagueId: string) {
             accessTokenExpiresAt: tokens.expiresAt,
             blazeId: tokens.blazeId ?? connection.blazeId,
             lastSyncAt: new Date(),
-            lastSyncStatus: "ok",
+            lastSyncStatus: scope === "week" ? "ok (week)" : "ok",
           },
         });
       });
 
-      return { weeks: exports.length };
+      return { weeks: exports.length, scope };
     } catch (error) {
       await prisma.eaConnection.update({
         where: { id: connection.id },

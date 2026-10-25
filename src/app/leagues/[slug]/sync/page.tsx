@@ -225,13 +225,24 @@ export default async function SyncPage({
               </tbody>
             </table>
             {canManage ? (
-              <form action={triggerSyncAction}>
-                <input type="hidden" name="leagueId" value={league.id} />
-                <input type="hidden" name="slug" value={slug} />
-                <button type="submit" className="btn btn--primary">
-                  Run sync now
-                </button>
-              </form>
+              <div className="form-grid">
+                <form action={triggerSyncAction}>
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="scope" value="all" />
+                  <button type="submit" className="btn btn--primary">
+                    Sync full season
+                  </button>
+                </form>
+                <form action={triggerSyncAction}>
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="scope" value="week" />
+                  <button type="submit" className="btn">
+                    Sync current week only
+                  </button>
+                </form>
+              </div>
             ) : null}
           </>
         ) : (

@@ -109,6 +109,10 @@ export async function triggerSyncAction(formData: FormData) {
 
   const leagueId = String(formData.get("leagueId") ?? "");
   const slug = String(formData.get("slug") ?? "");
+  const scopeRaw = String(formData.get("scope") ?? "all");
+  const scope = scopeRaw === "week" ? "week" : "all";
+  const weekNumberRaw = String(formData.get("weekNumber") ?? "").trim();
+  const weekNumber = weekNumberRaw ? Number(weekNumberRaw) : undefined;
 
   const membership = await prisma.leagueMembership.findUnique({
     where: {
@@ -125,7 +129,11 @@ export async function triggerSyncAction(formData: FormData) {
   }
 
   try {
-    await syncLeagueFromEa(leagueId);
+    await syncLeagueFromEa(leagueId, {
+      scope,
+      weekNumber:
+        weekNumber != null && Number.isFinite(weekNumber) ? weekNumber : undefined,
+    });
   } catch (error) {
     if (isNextRedirect(error)) {
       throw error;
