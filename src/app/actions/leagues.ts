@@ -92,6 +92,15 @@ async function createLeagueWithUniqueSlug(input: {
   throw new Error("Could not allocate a unique league slug");
 }
 
+function isNextRedirect(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    String((error as { digest?: string }).digest).startsWith("NEXT_REDIRECT")
+  );
+}
+
 export async function triggerSyncAction(formData: FormData) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -115,7 +124,21 @@ export async function triggerSyncAction(formData: FormData) {
     throw new Error("Only commissioners can sync");
   }
 
-  await syncLeagueFromEa(leagueId);
+  try {
+    await syncLeagueFromEa(leagueId);
+  } catch (error) {
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    const message =
+      error instanceof Error
+        ? error.message.slice(0, 280)
+        : "Sync failed. Try again in a few minutes.";
+    redirect(
+      `/leagues/${slug}/sync?error=${encodeURIComponent(message)}`,
+    );
+  }
+
   revalidatePath(`/leagues/${slug}`);
   redirect(`/leagues/${slug}/sync`);
 }

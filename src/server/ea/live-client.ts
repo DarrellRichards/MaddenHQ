@@ -19,10 +19,13 @@ import {
   exportTeams,
   getLeagueHub,
   getMyLeagues,
+  type BlazeSession,
 } from "./blaze";
 import { getEaLoginUrl } from "./constants";
 import { mapWeekExport } from "./map-export";
 import type { EaClient, EaLeagueSummary, EaTokens, EaWeekExport } from "./types";
+
+type LeagueHub = Awaited<ReturnType<typeof getLeagueHub>>;
 
 function toSessionTokens(tokens: EaTokens): EaSessionTokens {
   if (!tokens.console || !tokens.personaId) {
@@ -127,11 +130,20 @@ export class LiveEaClient implements EaClient {
     leagueId: string,
     week: number,
   ): Promise<EaWeekExport> {
-    return this.exportWeekInternal(tokens, leagueId, StageIndex.SEASON, week - 1);
+    const sessionTokens = toSessionTokens(tokens);
+    const { tokens: fresh, session } = await createBlazeSession(sessionTokens);
+    return this.exportWeekWithSession(
+      fresh,
+      session,
+      leagueId,
+      StageIndex.SEASON,
+      week - 1,
+    );
   }
 
   async exportAll(tokens: EaTokens, leagueId: string): Promise<EaWeekExport[]> {
     const sessionTokens = toSessionTokens(tokens);
+    // One Blaze login for the whole sync — EA rate-limits / flakes on login churn.
     const { tokens: fresh, session } = await createBlazeSession(sessionTokens);
     const hub = await getLeagueHub(fresh, session, Number(leagueId));
     const available = hub.responseInfo?.value?.availableWeekInfoList ?? [];
@@ -159,36 +171,39 @@ export class LiveEaClient implements EaClient {
       // Skip Pro Bowl week index 21 when present
       if (week.weekIndex === 21) continue;
       exports.push(
-        await this.exportWeekInternal(
-          fromSessionTokens(fresh),
+        await this.exportWeekWithSession(
+          fresh,
+          session,
           leagueId,
           week.stageIndex as StageIndex,
           week.weekIndex,
           seasonYear,
+          hub,
         ),
       );
     }
     return exports;
   }
 
-  private async exportWeekInternal(
-    tokens: EaTokens,
+  private async exportWeekWithSession(
+    tokens: EaSessionTokens,
+    session: BlazeSession,
     leagueId: string,
     stageIndex: StageIndex,
     weekIndex: number,
     seasonYearOverride?: number,
+    hubOverride?: LeagueHub,
   ): Promise<EaWeekExport> {
-    const sessionTokens = toSessionTokens(tokens);
-    const { tokens: fresh, session } = await createBlazeSession(sessionTokens);
     const numericLeagueId = Number(leagueId);
 
-    const hub = await getLeagueHub(fresh, session, numericLeagueId);
+    const hub =
+      hubOverride ?? (await getLeagueHub(tokens, session, numericLeagueId));
     const seasonYear =
       seasonYearOverride ??
       hub.responseInfo?.value?.careerHubInfo?.seasonInfo?.calendarYear ??
       new Date().getFullYear();
 
-    const teamsPayload = await exportTeams(fresh, session, numericLeagueId);
+    const teamsPayload = await exportTeams(tokens, session, numericLeagueId);
     const teams = teamsPayload.leagueTeamInfoList ?? [];
     const teamIndexById = new Map(
       (hub.responseInfo?.value?.teamIdInfoList ?? []).map((team) => [
@@ -210,7 +225,7 @@ export class LiveEaClient implements EaClient {
     for (const team of teams) {
       const listIndex = teamIndexById.get(team.teamId) ?? 0;
       const roster = await exportTeamRoster(
-        fresh,
+        tokens,
         session,
         numericLeagueId,
         team.teamId,
@@ -221,17 +236,17 @@ export class LiveEaClient implements EaClient {
       }
     }
 
-    const freeAgents = await exportFreeAgents(fresh, session, numericLeagueId);
+    const freeAgents = await exportFreeAgents(tokens, session, numericLeagueId);
     for (const player of freeAgents.rosterInfoList ?? []) {
       rosters.push(player);
     }
 
     const [schedules, passing, rushing, receiving, defense] = await Promise.all([
-      exportSchedules(fresh, session, numericLeagueId, stageIndex, weekIndex),
-      exportPassing(fresh, session, numericLeagueId, stageIndex, weekIndex),
-      exportRushing(fresh, session, numericLeagueId, stageIndex, weekIndex),
-      exportReceiving(fresh, session, numericLeagueId, stageIndex, weekIndex),
-      exportDefense(fresh, session, numericLeagueId, stageIndex, weekIndex),
+      exportSchedules(tokens, session, numericLeagueId, stageIndex, weekIndex),
+      exportPassing(tokens, session, numericLeagueId, stageIndex, weekIndex),
+      exportRushing(tokens, session, numericLeagueId, stageIndex, weekIndex),
+      exportReceiving(tokens, session, numericLeagueId, stageIndex, weekIndex),
+      exportDefense(tokens, session, numericLeagueId, stageIndex, weekIndex),
     ]);
 
     return mapWeekExport({

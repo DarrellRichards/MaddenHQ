@@ -22,7 +22,34 @@ type BlazeLoginResponse = {
     sessionKey?: string;
     personaDetails?: { personaId?: number };
   };
+  error?: {
+    errorcode?: number;
+    errorname?: string;
+  };
 };
+
+const TRANSIENT_BLAZE_CODES = new Set([
+  67606, // MCA_ERR_SERVER_ERROR
+  1073807360, // high load / timeout style (ERR_SYSTEM)
+]);
+
+const BLAZE_LOGIN_ATTEMPTS = 5;
+
+export function isTransientBlazeCode(code: number | undefined): boolean {
+  return code !== undefined && TRANSIENT_BLAZE_CODES.has(code);
+}
+
+export class BlazeRpcError extends Error {
+  errorcode?: number;
+  errorname?: string;
+
+  constructor(message: string, errorcode?: number, errorname?: string) {
+    super(message);
+    this.name = "BlazeRpcError";
+    this.errorcode = errorcode;
+    this.errorname = errorname;
+  }
+}
 
 function blazeHeaders(console: EaSystemConsole) {
   return {
@@ -55,49 +82,102 @@ export async function ensureFreshTokens(
 export async function createBlazeSession(
   tokens: EaSessionTokens,
 ): Promise<{ tokens: EaSessionTokens; session: BlazeSession }> {
-  const fresh = await ensureFreshTokens(tokens);
-  const res = await eaFetch(
-    "https://wal2.tools.gos.bio-iad.ea.com/wal/authentication/login",
-    {
-      blaze: true,
-      method: "POST",
-      headers: blazeHeaders(fresh.console),
-      body: JSON.stringify({
-        accessToken: fresh.accessToken,
-        productName: BLAZE_PRODUCT_NAME[fresh.console],
-      }),
-    },
-  );
-  const text = await res.text();
-  let parsed: BlazeLoginResponse;
-  try {
-    parsed = JSON.parse(sanitizeJsonText(text)) as BlazeLoginResponse;
-  } catch {
-    throw new Error(`Blaze login failed: ${text.slice(0, 400)}`);
+  let fresh = await ensureFreshTokens(tokens);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < BLAZE_LOGIN_ATTEMPTS; attempt++) {
+    // Refresh once before the final attempts in case the access token aged out mid-retry.
+    if (attempt > 0 && attempt % 2 === 0) {
+      fresh = await ensureFreshTokens({ ...fresh, expiresAt: new Date(0) });
+    }
+
+    try {
+      const res = await eaFetch(
+        "https://wal2.tools.gos.bio-iad.ea.com/wal/authentication/login",
+        {
+          blaze: true,
+          method: "POST",
+          headers: blazeHeaders(fresh.console),
+          body: JSON.stringify({
+            accessToken: fresh.accessToken,
+            productName: BLAZE_PRODUCT_NAME[fresh.console],
+          }),
+        },
+      );
+      const text = await res.text();
+      let parsed: BlazeLoginResponse;
+      try {
+        parsed = JSON.parse(sanitizeJsonText(text)) as BlazeLoginResponse;
+      } catch {
+        throw new Error(`Blaze login failed: ${text.slice(0, 400)}`);
+      }
+
+      if (parsed.error?.errorcode || parsed.error?.errorname) {
+        const code = parsed.error.errorcode;
+        const name = parsed.error.errorname ?? "UNKNOWN";
+        if (isTransientBlazeCode(code) && attempt < BLAZE_LOGIN_ATTEMPTS - 1) {
+          lastError = new BlazeRpcError(
+            `Blaze login transient error (${name}/${code})`,
+            code,
+            name,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** attempt),
+          );
+          continue;
+        }
+        throw new BlazeRpcError(
+          `Blaze login failed (${name}): ${text.slice(0, 400)}`,
+          code,
+          name,
+        );
+      }
+
+      const sessionKey = parsed.userLoginInfo?.sessionKey;
+      const blazeId = parsed.userLoginInfo?.personaDetails?.personaId;
+      if (!sessionKey || !blazeId) {
+        // Some transient failures omit a structured error object.
+        const looksTransient = /1073807360|ERR_SYSTEM|MCA_ERR_SERVER/i.test(text);
+        if ((looksTransient || attempt < 2) && attempt < BLAZE_LOGIN_ATTEMPTS - 1) {
+          lastError = new Error(`Blaze login missing session: ${text.slice(0, 400)}`);
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** attempt),
+          );
+          continue;
+        }
+        throw new Error(`Blaze login missing session: ${text.slice(0, 400)}`);
+      }
+
+      return {
+        tokens: { ...fresh, blazeId: String(blazeId) },
+        session: { blazeId, sessionKey, requestId: 1 },
+      };
+    } catch (error) {
+      lastError = error;
+      const code = error instanceof BlazeRpcError ? error.errorcode : undefined;
+      if (isTransientBlazeCode(code) && attempt < BLAZE_LOGIN_ATTEMPTS - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 1000 * 2 ** attempt),
+        );
+        continue;
+      }
+      if (attempt < BLAZE_LOGIN_ATTEMPTS - 1 && !(error instanceof BlazeRpcError)) {
+        // Network / parse flakes — retry a couple times.
+        const message = error instanceof Error ? error.message : String(error);
+        if (/fetch failed|network|ECONNRESET|ETIMEDOUT|Blaze login failed:/i.test(message)) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** attempt),
+          );
+          continue;
+        }
+      }
+      throw error;
+    }
   }
 
-  const sessionKey = parsed.userLoginInfo?.sessionKey;
-  const blazeId = parsed.userLoginInfo?.personaDetails?.personaId;
-  if (!sessionKey || !blazeId) {
-    throw new Error(`Blaze login missing session: ${text.slice(0, 400)}`);
-  }
-
-  return {
-    tokens: { ...fresh, blazeId: String(blazeId) },
-    session: { blazeId, sessionKey, requestId: 1 },
-  };
-}
-
-export class BlazeRpcError extends Error {
-  errorcode?: number;
-  errorname?: string;
-
-  constructor(message: string, errorcode?: number, errorname?: string) {
-    super(message);
-    this.name = "BlazeRpcError";
-    this.errorcode = errorcode;
-    this.errorname = errorname;
-  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Blaze login failed after retries");
 }
 
 async function sendProcessRequest<T>(
@@ -153,11 +233,6 @@ async function sendProcessRequest<T>(
   return parsed as T;
 }
 
-const TRANSIENT_BLAZE_CODES = new Set([
-  67606, // MCA_ERR_SERVER_ERROR
-  1073807360, // high load / timeout style
-]);
-
 async function withBlazeRpcRetry<T>(
   tokens: EaSessionTokens,
   session: BlazeSession,
@@ -173,7 +248,7 @@ async function withBlazeRpcRetry<T>(
     } catch (error) {
       lastError = error;
       const code = error instanceof BlazeRpcError ? error.errorcode : undefined;
-      if (code && TRANSIENT_BLAZE_CODES.has(code) && attempt < 2) {
+      if (isTransientBlazeCode(code) && attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 750 * 2 ** attempt));
         const refreshed = await createBlazeSession(activeTokens);
         activeTokens = refreshed.tokens;
@@ -290,8 +365,7 @@ async function getExportData<T>(
       };
       if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error) {
         const code = parsed.error.errorcode;
-        // High-load / timeout style codes — retry
-        if (code === 1073807360 && attempt < retries - 1) {
+        if (isTransientBlazeCode(code) && attempt < retries - 1) {
           await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
           continue;
         }
