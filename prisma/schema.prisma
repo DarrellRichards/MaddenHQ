@@ -347,3 +347,17 @@ model EaConnection {
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+/// Short-lived wizard state for EA connect. Large tokens do not fit in cookies.
+model PendingEaConnect {
+  id        String   @id @default(cuid())
+  userId    String
+  leagueId  String
+  payload   String   @db.Text // encrypted JSON blob
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, leagueId])
+  @@index([expiresAt])
+}

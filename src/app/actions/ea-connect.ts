@@ -11,6 +11,7 @@ import { createBlazeSession, getMyLeagues } from "@/server/ea/blaze";
 import { getEaClient } from "@/server/ea";
 import type { EaTokens } from "@/server/ea/types";
 import {
+  beginPendingEaConnect,
   clearPendingEaCookies,
   getPendingEaTokens,
   getPendingLeagues,
@@ -36,8 +37,11 @@ async function requireCommissioner(leagueId: string, userId: string) {
   }
 }
 
-async function storePendingSessionAndLeagues(tokens: EaTokens): Promise<PendingEaLeague[]> {
-  await setPendingEaTokens(tokens);
+async function storePendingSessionAndLeagues(
+  tokens: EaTokens,
+  ctx: { userId: string; leagueId: string },
+): Promise<PendingEaLeague[]> {
+  await setPendingEaTokens(tokens, ctx);
 
   const mode = process.env.EA_CLIENT_MODE ?? "stub";
   if (mode === "stub") {
@@ -46,12 +50,12 @@ async function storePendingSessionAndLeagues(tokens: EaTokens): Promise<PendingE
       name: entry.name,
       seasonText: entry.seasonText,
     }));
-    await setPendingLeagues(leagues);
+    await setPendingLeagues(leagues, ctx);
     return leagues;
   }
 
   if (!tokens.console || !tokens.personaId) {
-    await setPendingLeagues([]);
+    await setPendingLeagues([], ctx);
     return [];
   }
 
@@ -64,25 +68,28 @@ async function storePendingSessionAndLeagues(tokens: EaTokens): Promise<PendingE
       personaId: tokens.personaId,
       blazeId: tokens.blazeId,
     });
-    await setPendingEaTokens({
-      accessToken: fresh.accessToken,
-      refreshToken: fresh.refreshToken,
-      expiresAt: fresh.expiresAt,
-      console: fresh.console,
-      personaId: fresh.personaId,
-      blazeId: fresh.blazeId,
-    });
+    await setPendingEaTokens(
+      {
+        accessToken: fresh.accessToken,
+        refreshToken: fresh.refreshToken,
+        expiresAt: fresh.expiresAt,
+        console: fresh.console,
+        personaId: fresh.personaId,
+        blazeId: fresh.blazeId,
+      },
+      ctx,
+    );
     const rows = await getMyLeagues(fresh, session);
     const leagues = rows.map((entry) => ({
       id: String(entry.leagueId),
       name: entry.leagueName,
       seasonText: entry.seasonText,
     }));
-    await setPendingLeagues(leagues);
+    await setPendingLeagues(leagues, ctx);
     return leagues;
   } catch (error) {
     // Keep tokens so the commissioner can still enter a league id manually.
-    await setPendingLeagues([]);
+    await setPendingLeagues([], ctx);
     throw error;
   }
 }
@@ -121,23 +128,28 @@ export async function discoverEaPersonasAction(formData: FormData) {
   }
 
   await requireCommissioner(leagueId, session.user.id);
+  const ctx = { userId: session.user.id, leagueId };
+  await beginPendingEaConnect(ctx.userId, ctx.leagueId);
 
   const mode = process.env.EA_CLIENT_MODE ?? "stub";
   try {
     if (mode === "stub") {
       const client = getEaClient();
       const personas = (await client.listPersonas?.(callbackUrl)) ?? [];
-      await setTempEaAuth({ tempAccessToken: "stub", callbackUrl });
-      await setPendingPersonas(personas);
+      await setTempEaAuth({ tempAccessToken: "stub", callbackUrl }, ctx);
+      await setPendingPersonas(personas, ctx);
       redirect(`/leagues/${slug}/sync?step=persona`);
     }
 
     const discovered = await listPersonasFromCallback(callbackUrl);
-    await setTempEaAuth({
-      tempAccessToken: discovered.tempAccessToken,
-      callbackUrl,
-    });
-    await setPendingPersonas(discovered.personas);
+    await setTempEaAuth(
+      {
+        tempAccessToken: discovered.tempAccessToken,
+        callbackUrl,
+      },
+      ctx,
+    );
+    await setPendingPersonas(discovered.personas, ctx);
 
     if (discovered.personas.length === 1) {
       const persona = discovered.personas[0]!;
@@ -147,14 +159,17 @@ export async function discoverEaPersonasAction(formData: FormData) {
       });
       const { tokens } = await createBlazeSession(sessionTokens);
       try {
-        await storePendingSessionAndLeagues({
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresAt: tokens.expiresAt,
-          console: tokens.console,
-          personaId: tokens.personaId,
-          blazeId: tokens.blazeId,
-        });
+        await storePendingSessionAndLeagues(
+          {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresAt: tokens.expiresAt,
+            console: tokens.console,
+            personaId: tokens.personaId,
+            blazeId: tokens.blazeId,
+          },
+          ctx,
+        );
         redirect(`/leagues/${slug}/sync?step=league`);
       } catch (error) {
         redirectWithEaError(slug, "league", error);
@@ -180,6 +195,7 @@ export async function selectEaPersonaAction(formData: FormData) {
   }
 
   await requireCommissioner(leagueId, session.user.id);
+  const ctx = { userId: session.user.id, leagueId };
 
   const mode = process.env.EA_CLIENT_MODE ?? "stub";
   try {
@@ -190,7 +206,7 @@ export async function selectEaPersonaAction(formData: FormData) {
         temp?.callbackUrl ?? "http://127.0.0.1/success?code=stub",
         personaId,
       );
-      await storePendingSessionAndLeagues(tokens);
+      await storePendingSessionAndLeagues(tokens, ctx);
       redirect(`/leagues/${slug}/sync?step=league`);
     }
 
@@ -207,14 +223,17 @@ export async function selectEaPersonaAction(formData: FormData) {
     });
     const { tokens } = await createBlazeSession(sessionTokens);
     try {
-      await storePendingSessionAndLeagues({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        console: tokens.console,
-        personaId: tokens.personaId,
-        blazeId: tokens.blazeId,
-      });
+      await storePendingSessionAndLeagues(
+        {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          console: tokens.console,
+          personaId: tokens.personaId,
+          blazeId: tokens.blazeId,
+        },
+        ctx,
+      );
       redirect(`/leagues/${slug}/sync?step=league`);
     } catch (error) {
       redirectWithEaError(slug, "league", error);
@@ -239,7 +258,10 @@ export async function retryEaLeagueListAction(formData: FormData) {
   }
 
   try {
-    await storePendingSessionAndLeagues(tokens);
+    await storePendingSessionAndLeagues(tokens, {
+      userId: session.user.id,
+      leagueId,
+    });
     redirect(`/leagues/${slug}/sync?step=league`);
   } catch (error) {
     redirectWithEaError(slug, "league", error);
@@ -260,7 +282,11 @@ export async function selectEaLeagueAction(formData: FormData) {
   await requireCommissioner(leagueId, session.user.id);
   const tokens = await getPendingEaTokens();
   if (!tokens) {
-    throw new Error("EA login session expired. Start connect again.");
+    redirect(
+      `/leagues/${slug}/sync?error=${encodeURIComponent(
+        "EA login session expired. Start connect again from Open EA login.",
+      )}`,
+    );
   }
 
   const cached = await getPendingLeagues();
