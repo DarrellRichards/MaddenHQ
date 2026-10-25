@@ -22,7 +22,34 @@ type BlazeLoginResponse = {
     sessionKey?: string;
     personaDetails?: { personaId?: number };
   };
+  error?: {
+    errorcode?: number;
+    errorname?: string;
+  };
 };
+
+const TRANSIENT_BLAZE_CODES = new Set([
+  67606, // MCA_ERR_SERVER_ERROR
+  1073807360, // high load / timeout style (ERR_SYSTEM)
+]);
+
+const BLAZE_LOGIN_ATTEMPTS = 5;
+
+export function isTransientBlazeCode(code: number | undefined): boolean {
+  return code !== undefined && TRANSIENT_BLAZE_CODES.has(code);
+}
+
+export class BlazeRpcError extends Error {
+  errorcode?: number;
+  errorname?: string;
+
+  constructor(message: string, errorcode?: number, errorname?: string) {
+    super(message);
+    this.name = "BlazeRpcError";
+    this.errorcode = errorcode;
+    this.errorname = errorname;
+  }
+}
 
 function blazeHeaders(console: EaSystemConsole) {
   return {
@@ -55,37 +82,102 @@ export async function ensureFreshTokens(
 export async function createBlazeSession(
   tokens: EaSessionTokens,
 ): Promise<{ tokens: EaSessionTokens; session: BlazeSession }> {
-  const fresh = await ensureFreshTokens(tokens);
-  const res = await eaFetch(
-    "https://wal2.tools.gos.bio-iad.ea.com/wal/authentication/login",
-    {
-      blaze: true,
-      method: "POST",
-      headers: blazeHeaders(fresh.console),
-      body: JSON.stringify({
-        accessToken: fresh.accessToken,
-        productName: BLAZE_PRODUCT_NAME[fresh.console],
-      }),
-    },
-  );
-  const text = await res.text();
-  let parsed: BlazeLoginResponse;
-  try {
-    parsed = JSON.parse(sanitizeJsonText(text)) as BlazeLoginResponse;
-  } catch {
-    throw new Error(`Blaze login failed: ${text.slice(0, 400)}`);
+  let fresh = await ensureFreshTokens(tokens);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < BLAZE_LOGIN_ATTEMPTS; attempt++) {
+    // Refresh once before the final attempts in case the access token aged out mid-retry.
+    if (attempt > 0 && attempt % 2 === 0) {
+      fresh = await ensureFreshTokens({ ...fresh, expiresAt: new Date(0) });
+    }
+
+    try {
+      const res = await eaFetch(
+        "https://wal2.tools.gos.bio-iad.ea.com/wal/authentication/login",
+        {
+          blaze: true,
+          method: "POST",
+          headers: blazeHeaders(fresh.console),
+          body: JSON.stringify({
+            accessToken: fresh.accessToken,
+            productName: BLAZE_PRODUCT_NAME[fresh.console],
+          }),
+        },
+      );
+      const text = await res.text();
+      let parsed: BlazeLoginResponse;
+      try {
+        parsed = JSON.parse(sanitizeJsonText(text)) as BlazeLoginResponse;
+      } catch {
+        throw new Error(`Blaze login failed: ${text.slice(0, 400)}`);
+      }
+
+      if (parsed.error?.errorcode || parsed.error?.errorname) {
+        const code = parsed.error.errorcode;
+        const name = parsed.error.errorname ?? "UNKNOWN";
+        if (isTransientBlazeCode(code) && attempt < BLAZE_LOGIN_ATTEMPTS - 1) {
+          lastError = new BlazeRpcError(
+            `Blaze login transient error (${name}/${code})`,
+            code,
+            name,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** attempt),
+          );
+          continue;
+        }
+        throw new BlazeRpcError(
+          `Blaze login failed (${name}): ${text.slice(0, 400)}`,
+          code,
+          name,
+        );
+      }
+
+      const sessionKey = parsed.userLoginInfo?.sessionKey;
+      const blazeId = parsed.userLoginInfo?.personaDetails?.personaId;
+      if (!sessionKey || !blazeId) {
+        // Some transient failures omit a structured error object.
+        const looksTransient = /1073807360|ERR_SYSTEM|MCA_ERR_SERVER/i.test(text);
+        if ((looksTransient || attempt < 2) && attempt < BLAZE_LOGIN_ATTEMPTS - 1) {
+          lastError = new Error(`Blaze login missing session: ${text.slice(0, 400)}`);
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** attempt),
+          );
+          continue;
+        }
+        throw new Error(`Blaze login missing session: ${text.slice(0, 400)}`);
+      }
+
+      return {
+        tokens: { ...fresh, blazeId: String(blazeId) },
+        session: { blazeId, sessionKey, requestId: 1 },
+      };
+    } catch (error) {
+      lastError = error;
+      const code = error instanceof BlazeRpcError ? error.errorcode : undefined;
+      if (isTransientBlazeCode(code) && attempt < BLAZE_LOGIN_ATTEMPTS - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 1000 * 2 ** attempt),
+        );
+        continue;
+      }
+      if (attempt < BLAZE_LOGIN_ATTEMPTS - 1 && !(error instanceof BlazeRpcError)) {
+        // Network / parse flakes — retry a couple times.
+        const message = error instanceof Error ? error.message : String(error);
+        if (/fetch failed|network|ECONNRESET|ETIMEDOUT|Blaze login failed:/i.test(message)) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** attempt),
+          );
+          continue;
+        }
+      }
+      throw error;
+    }
   }
 
-  const sessionKey = parsed.userLoginInfo?.sessionKey;
-  const blazeId = parsed.userLoginInfo?.personaDetails?.personaId;
-  if (!sessionKey || !blazeId) {
-    throw new Error(`Blaze login missing session: ${text.slice(0, 400)}`);
-  }
-
-  return {
-    tokens: { ...fresh, blazeId: String(blazeId) },
-    session: { blazeId, sessionKey, requestId: 1 },
-  };
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Blaze login failed after retries");
 }
 
 async function sendProcessRequest<T>(
@@ -128,11 +220,49 @@ async function sendProcessRequest<T>(
     },
   );
   const text = sanitizeJsonText(await res.text());
-  const parsed = JSON.parse(text) as T & { error?: unknown };
+  const parsed = JSON.parse(text) as T & {
+    error?: { errorcode?: number; errorname?: string };
+  };
   if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error) {
-    throw new Error(`Blaze RPC error: ${text.slice(0, 500)}`);
+    throw new BlazeRpcError(
+      `Blaze RPC error: ${text.slice(0, 500)}`,
+      parsed.error.errorcode,
+      parsed.error.errorname,
+    );
   }
   return parsed as T;
+}
+
+async function withBlazeRpcRetry<T>(
+  tokens: EaSessionTokens,
+  session: BlazeSession,
+  run: (active: { tokens: EaSessionTokens; session: BlazeSession }) => Promise<T>,
+): Promise<T> {
+  let activeTokens = tokens;
+  let activeSession = session;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await run({ tokens: activeTokens, session: activeSession });
+    } catch (error) {
+      lastError = error;
+      const code = error instanceof BlazeRpcError ? error.errorcode : undefined;
+      if (isTransientBlazeCode(code) && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 750 * 2 ** attempt));
+        const refreshed = await createBlazeSession(activeTokens);
+        activeTokens = refreshed.tokens;
+        activeSession = {
+          ...refreshed.session,
+          requestId: Math.max(activeSession.requestId, refreshed.session.requestId),
+        };
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Blaze RPC failed");
 }
 
 export async function getMyLeagues(
@@ -146,24 +276,27 @@ export async function getMyLeagues(
     seasonText?: string;
   }>
 > {
-  const response = await sendProcessRequest<{
-    responseInfo?: {
-      value?: {
-        leagues?: Array<{
-          leagueId: number;
-          leagueName: string;
-          calendarYear?: number;
-          seasonText?: string;
-        }>;
+  // Companion uses franchisemode for league list/hub RPC (not careermode).
+  const response = await withBlazeRpcRetry(tokens, session, ({ tokens: t, session: s }) =>
+    sendProcessRequest<{
+      responseInfo?: {
+        value?: {
+          leagues?: Array<{
+            leagueId: number;
+            leagueName: string;
+            calendarYear?: number;
+            seasonText?: string;
+          }>;
+        };
       };
-    };
-  }>(tokens, session, {
-    commandName: "Mobile_GetMyLeagues",
-    componentId: 2060,
-    commandId: 801,
-    componentName: "careermode",
-    requestPayload: {},
-  });
+    }>(t, s, {
+      commandName: "Mobile_GetMyLeagues",
+      componentId: 2060,
+      commandId: 801,
+      componentName: "franchisemode",
+      requestPayload: {},
+    }),
+  );
 
   return response.responseInfo?.value?.leagues ?? [];
 }
@@ -173,36 +306,38 @@ export async function getLeagueHub(
   session: BlazeSession,
   leagueId: number,
 ) {
-  return sendProcessRequest<{
-    responseInfo?: {
-      value?: {
-        careerHubInfo?: {
-          seasonInfo?: {
-            calendarYear?: number;
-            seasonWeek?: number;
-            seasonWeekType?: number;
+  return withBlazeRpcRetry(tokens, session, ({ tokens: t, session: s }) =>
+    sendProcessRequest<{
+      responseInfo?: {
+        value?: {
+          careerHubInfo?: {
+            seasonInfo?: {
+              calendarYear?: number;
+              seasonWeek?: number;
+              seasonWeekType?: number;
+            };
           };
+          teamIdInfoList?: Array<{
+            teamId: number;
+            teamIndex: number;
+            shortName?: string;
+            displayName?: string;
+          }>;
+          availableWeekInfoList?: Array<{
+            stageIndex: number;
+            weekIndex: number;
+            weekTitle?: string;
+          }>;
         };
-        teamIdInfoList?: Array<{
-          teamId: number;
-          teamIndex: number;
-          shortName?: string;
-          displayName?: string;
-        }>;
-        availableWeekInfoList?: Array<{
-          stageIndex: number;
-          weekIndex: number;
-          weekTitle?: string;
-        }>;
       };
-    };
-  }>(tokens, session, {
-    commandName: "Mobile_Career_GetLeagueHub",
-    componentId: 2060,
-    commandId: 811,
-    componentName: "careermode",
-    requestPayload: { leagueId },
-  });
+    }>(t, s, {
+      commandName: "Mobile_Career_GetLeagueHub",
+      componentId: 2060,
+      commandId: 811,
+      componentName: "franchisemode",
+      requestPayload: { leagueId },
+    }),
+  );
 }
 
 async function getExportData<T>(
@@ -230,8 +365,7 @@ async function getExportData<T>(
       };
       if (parsed && typeof parsed === "object" && "error" in parsed && parsed.error) {
         const code = parsed.error.errorcode;
-        // High-load / timeout style codes — retry
-        if (code === 1073807360 && attempt < retries - 1) {
+        if (isTransientBlazeCode(code) && attempt < retries - 1) {
           await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
           continue;
         }

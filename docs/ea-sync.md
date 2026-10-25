@@ -50,3 +50,9 @@ EA_CLIENT_MODE=live
 | `src/server/ea/sync.ts` | Upsert into Postgres (locked per league) |
 
 Blaze requires legacy SSL (`SSL_OP_LEGACY_SERVER_CONNECT`) against `wal2.tools.gos.bio-iad.ea.com`.
+
+League list / hub RPC must use `componentName: "franchisemode"` (Companion). Using `careermode` returns `MCA_ERR_SERVER_ERROR` (67606).
+
+Transient Blaze errors are retried with a fresh session. If listing still fails, Sync allows entering the numeric EA league id manually.
+
+Connect wizard state (tokens, personas, league list) is stored in Postgres (`PendingEaConnect`) with only a short session id cookie. Encrypted EA JWTs are too large for browser cookies and would otherwise appear as “EA login session expired” on the next step.
