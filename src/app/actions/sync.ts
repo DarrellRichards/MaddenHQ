@@ -58,10 +58,13 @@ export async function triggerSyncAction(formData: FormData) {
     if (isNextRedirect(error)) {
       throw error;
     }
-    const message =
+    const raw =
       error instanceof Error
-        ? error.message.slice(0, 280)
+        ? error.message
         : "Sync failed. Try again in a few minutes.";
+    const message = /1073807360|ERR_SYSTEM|unusually high server load/i.test(raw)
+      ? "EA Blaze is under high load (roster/stats export). Wait a minute and try Sync current week, or retry full season later."
+      : raw.slice(0, 280);
     redirect(
       `/leagues/${slug}/sync?error=${encodeURIComponent(message)}`,
     );
