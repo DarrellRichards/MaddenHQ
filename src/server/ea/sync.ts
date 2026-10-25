@@ -16,40 +16,63 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+async function findPlayerByRosterId(
+  tx: Prisma.TransactionClient,
+  leagueId: string,
+  rosterId: string,
+) {
+  // findFirst — findUnique on @@unique([leagueId, rosterId]) is unsafe while rosterId is optional.
+  return tx.player.findFirst({
+    where: { leagueId, rosterId },
+  });
+}
+
+async function findPlayerByName(
+  tx: Prisma.TransactionClient,
+  leagueId: string,
+  firstName: string,
+  lastName: string,
+  position: string,
+) {
+  return tx.player.findFirst({
+    where: { leagueId, firstName, lastName, position },
+  });
+}
+
 async function upsertSyncedPlayer(
   tx: Prisma.TransactionClient,
   leagueId: string,
   player: ExportPlayer,
   teamByAbbr: Map<string, string>,
 ) {
+  const firstName = player.firstName?.trim() ?? "";
+  const lastName = player.lastName?.trim() ?? "";
+  const position = player.position?.trim() ?? "";
+  if (!firstName || !lastName || !position) {
+    return null;
+  }
+
   const teamId = player.teamAbbr ? (teamByAbbr.get(player.teamAbbr) ?? null) : null;
   const rosterId = player.rosterId?.trim() || null;
 
   let existing = rosterId
-    ? await tx.player.findUnique({
-        where: { leagueId_rosterId: { leagueId, rosterId } },
-      })
+    ? await findPlayerByRosterId(tx, leagueId, rosterId)
     : null;
 
   // Reconcile seeded / prior rows that lack rosterId.
   if (!existing) {
-    existing = await tx.player.findUnique({
-      where: {
-        leagueId_firstName_lastName_position: {
-          leagueId,
-          firstName: player.firstName,
-          lastName: player.lastName,
-          position: player.position,
-        },
-      },
-    });
+    existing = await findPlayerByName(
+      tx,
+      leagueId,
+      firstName,
+      lastName,
+      position,
+    );
   }
 
   // If name match would steal another row's rosterId, keep the rosterId row canonical.
   if (existing && rosterId && existing.rosterId !== rosterId) {
-    const byRoster = await tx.player.findUnique({
-      where: { leagueId_rosterId: { leagueId, rosterId } },
-    });
+    const byRoster = await findPlayerByRosterId(tx, leagueId, rosterId);
     if (byRoster) {
       existing = byRoster;
     }
@@ -57,11 +80,11 @@ async function upsertSyncedPlayer(
 
   const data = {
     teamId,
-    overall: player.overall,
-    jerseyNumber: player.jerseyNumber,
-    firstName: player.firstName,
-    lastName: player.lastName,
-    position: player.position,
+    overall: player.overall ?? null,
+    jerseyNumber: player.jerseyNumber ?? null,
+    firstName,
+    lastName,
+    position,
     rosterId: rosterId ?? existing?.rosterId ?? null,
   };
 
@@ -85,42 +108,25 @@ async function upsertSyncedPlayer(
     // Unique race / missed lookup — resolve and update instead of failing the sync.
     const recovered =
       (rosterId
-        ? await tx.player.findUnique({
-            where: { leagueId_rosterId: { leagueId, rosterId } },
-          })
+        ? await findPlayerByRosterId(tx, leagueId, rosterId)
         : null) ??
-      (await tx.player.findUnique({
-        where: {
-          leagueId_firstName_lastName_position: {
-            leagueId,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            position: player.position,
-          },
-        },
-      }));
+      (await findPlayerByName(tx, leagueId, firstName, lastName, position));
 
     if (!recovered) throw error;
 
     // If create lost on rosterId but recovered by name (or vice versa), still update.
-    if (
-      rosterId &&
-      recovered.rosterId &&
-      recovered.rosterId !== rosterId
-    ) {
-      const owner = await tx.player.findUnique({
-        where: { leagueId_rosterId: { leagueId, rosterId } },
-      });
+    if (rosterId && recovered.rosterId && recovered.rosterId !== rosterId) {
+      const owner = await findPlayerByRosterId(tx, leagueId, rosterId);
       if (owner) {
         return tx.player.update({
           where: { id: owner.id },
           data: {
             teamId,
-            overall: player.overall,
-            jerseyNumber: player.jerseyNumber,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            position: player.position,
+            overall: player.overall ?? null,
+            jerseyNumber: player.jerseyNumber ?? null,
+            firstName,
+            lastName,
+            position,
           },
         });
       }
@@ -130,12 +136,12 @@ async function upsertSyncedPlayer(
       where: { id: recovered.id },
       data: {
         teamId,
-        overall: player.overall,
-        jerseyNumber: player.jerseyNumber,
+        overall: player.overall ?? null,
+        jerseyNumber: player.jerseyNumber ?? null,
         rosterId: rosterId ?? recovered.rosterId,
-        firstName: player.firstName,
-        lastName: player.lastName,
-        position: player.position,
+        firstName,
+        lastName,
+        position,
       },
     });
   }
@@ -208,6 +214,7 @@ async function upsertExport(
   const playerByKey = new Map<string, string>();
   for (const player of dedupeExportPlayers(data.players)) {
     const row = await upsertSyncedPlayer(tx, leagueId, player, teamByAbbr);
+    if (!row) continue;
     const key =
       (player.rosterId?.trim() || null) ??
       `${player.lastName}|${player.firstName}|${player.position}`;

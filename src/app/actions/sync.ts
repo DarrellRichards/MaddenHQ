@@ -15,6 +15,28 @@ function isNextRedirect(error: unknown): boolean {
   );
 }
 
+function formatSyncError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Sync failed. Try again in a few minutes.";
+  }
+  const raw = error.message;
+  if (/1073807360|ERR_SYSTEM|unusually high server load/i.test(raw)) {
+    return "EA Blaze is under high load (roster/stats export). Wait a minute and try Sync current week, or retry full season later.";
+  }
+  const argHint = raw.match(/Argument `[^=\n]+`[^\n]*/);
+  if (argHint) {
+    return `Database sync error: ${argHint[0].trim()}`.slice(0, 280);
+  }
+  const invocation = raw.match(/Invalid `[^`]+` invocation/);
+  if (invocation) {
+    return `Database sync error: ${invocation[0]}. Check server logs for details.`.slice(
+      0,
+      280,
+    );
+  }
+  return raw.replace(/\s+/g, " ").slice(0, 280);
+}
+
 /**
  * Kept in a separate server-actions module from league create so the dashboard
  * does not pull the EA Blaze transport into the shared action module graph.
@@ -58,15 +80,8 @@ export async function triggerSyncAction(formData: FormData) {
     if (isNextRedirect(error)) {
       throw error;
     }
-    const raw =
-      error instanceof Error
-        ? error.message
-        : "Sync failed. Try again in a few minutes.";
-    const message = /1073807360|ERR_SYSTEM|unusually high server load/i.test(raw)
-      ? "EA Blaze is under high load (roster/stats export). Wait a minute and try Sync current week, or retry full season later."
-      : raw.slice(0, 280);
     redirect(
-      `/leagues/${slug}/sync?error=${encodeURIComponent(message)}`,
+      `/leagues/${slug}/sync?error=${encodeURIComponent(formatSyncError(error))}`,
     );
   }
 
