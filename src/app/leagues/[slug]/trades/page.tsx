@@ -112,28 +112,48 @@ export default async function TradesPage({
               <input type="hidden" name="toTeamId" value={selectedTo} />
 
               <div className="form-grid">
-                <label>
-                  Players leaving from team
-                  <select name="fromPlayerIds" multiple size={Math.min(8, Math.max(3, fromPlayers.length))}>
-                    {fromPlayers.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.position} {player.firstName} {player.lastName} (OVR{" "}
-                        {player.overall ?? "?"})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Players leaving to team
-                  <select name="toPlayerIds" multiple size={Math.min(8, Math.max(3, toPlayers.length))}>
-                    {toPlayers.map((player) => (
-                      <option key={player.id} value={player.id}>
-                        {player.position} {player.firstName} {player.lastName} (OVR{" "}
-                        {player.overall ?? "?"})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <fieldset>
+                  <legend>Players leaving from team</legend>
+                  <div className="stack" style={{ gap: "0.35rem" }}>
+                    {fromPlayers.length === 0 ? (
+                      <span className="muted">No players on this roster.</span>
+                    ) : (
+                      fromPlayers.map((player) => (
+                        <label
+                          key={player.id}
+                          style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
+                        >
+                          <input type="checkbox" name="fromPlayerIds" value={player.id} />
+                          <span>
+                            {player.position} {player.firstName} {player.lastName} (OVR{" "}
+                            {player.overall ?? "?"})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>Players leaving to team</legend>
+                  <div className="stack" style={{ gap: "0.35rem" }}>
+                    {toPlayers.length === 0 ? (
+                      <span className="muted">No players on this roster.</span>
+                    ) : (
+                      toPlayers.map((player) => (
+                        <label
+                          key={player.id}
+                          style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
+                        >
+                          <input type="checkbox" name="toPlayerIds" value={player.id} />
+                          <span>
+                            {player.position} {player.firstName} {player.lastName} (OVR{" "}
+                            {player.overall ?? "?"})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </fieldset>
               </div>
 
               <div className="form-grid">
