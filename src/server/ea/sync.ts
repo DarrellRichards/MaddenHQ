@@ -2,7 +2,144 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { getEaClient } from "./index";
+import { dedupeExportPlayers } from "./player-dedupe";
 import type { EaWeekExport } from "./types";
+
+type ExportPlayer = EaWeekExport["players"][number];
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2002"
+  );
+}
+
+async function upsertSyncedPlayer(
+  tx: Prisma.TransactionClient,
+  leagueId: string,
+  player: ExportPlayer,
+  teamByAbbr: Map<string, string>,
+) {
+  const teamId = player.teamAbbr ? (teamByAbbr.get(player.teamAbbr) ?? null) : null;
+  const rosterId = player.rosterId?.trim() || null;
+
+  let existing = rosterId
+    ? await tx.player.findUnique({
+        where: { leagueId_rosterId: { leagueId, rosterId } },
+      })
+    : null;
+
+  // Reconcile seeded / prior rows that lack rosterId.
+  if (!existing) {
+    existing = await tx.player.findUnique({
+      where: {
+        leagueId_firstName_lastName_position: {
+          leagueId,
+          firstName: player.firstName,
+          lastName: player.lastName,
+          position: player.position,
+        },
+      },
+    });
+  }
+
+  // If name match would steal another row's rosterId, keep the rosterId row canonical.
+  if (existing && rosterId && existing.rosterId !== rosterId) {
+    const byRoster = await tx.player.findUnique({
+      where: { leagueId_rosterId: { leagueId, rosterId } },
+    });
+    if (byRoster) {
+      existing = byRoster;
+    }
+  }
+
+  const data = {
+    teamId,
+    overall: player.overall,
+    jerseyNumber: player.jerseyNumber,
+    firstName: player.firstName,
+    lastName: player.lastName,
+    position: player.position,
+    rosterId: rosterId ?? existing?.rosterId ?? null,
+  };
+
+  if (existing) {
+    return tx.player.update({
+      where: { id: existing.id },
+      data,
+    });
+  }
+
+  try {
+    return await tx.player.create({
+      data: {
+        leagueId,
+        ...data,
+      },
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+
+    // Unique race / missed lookup — resolve and update instead of failing the sync.
+    const recovered =
+      (rosterId
+        ? await tx.player.findUnique({
+            where: { leagueId_rosterId: { leagueId, rosterId } },
+          })
+        : null) ??
+      (await tx.player.findUnique({
+        where: {
+          leagueId_firstName_lastName_position: {
+            leagueId,
+            firstName: player.firstName,
+            lastName: player.lastName,
+            position: player.position,
+          },
+        },
+      }));
+
+    if (!recovered) throw error;
+
+    // If create lost on rosterId but recovered by name (or vice versa), still update.
+    if (
+      rosterId &&
+      recovered.rosterId &&
+      recovered.rosterId !== rosterId
+    ) {
+      const owner = await tx.player.findUnique({
+        where: { leagueId_rosterId: { leagueId, rosterId } },
+      });
+      if (owner) {
+        return tx.player.update({
+          where: { id: owner.id },
+          data: {
+            teamId,
+            overall: player.overall,
+            jerseyNumber: player.jerseyNumber,
+            firstName: player.firstName,
+            lastName: player.lastName,
+            position: player.position,
+          },
+        });
+      }
+    }
+
+    return tx.player.update({
+      where: { id: recovered.id },
+      data: {
+        teamId,
+        overall: player.overall,
+        jerseyNumber: player.jerseyNumber,
+        rosterId: rosterId ?? recovered.rosterId,
+        firstName: player.firstName,
+        lastName: player.lastName,
+        position: player.position,
+      },
+    });
+  }
+}
 
 async function withLeagueSyncLock<T>(
   leagueId: string,
@@ -69,56 +206,16 @@ async function upsertExport(
   }
 
   const playerByKey = new Map<string, string>();
-  for (const player of data.players) {
-    const teamId = player.teamAbbr ? (teamByAbbr.get(player.teamAbbr) ?? null) : null;
-
-    let existing = player.rosterId
-      ? await tx.player.findUnique({
-          where: {
-            leagueId_rosterId: { leagueId, rosterId: player.rosterId },
-          },
-        })
-      : null;
-
-    // Reconcile seeded players that lack rosterId with incoming fixture/export rows.
-    if (!existing) {
-      existing = await tx.player.findUnique({
-        where: {
-          leagueId_firstName_lastName_position: {
-            leagueId,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            position: player.position,
-          },
-        },
-      });
-    }
-
-    const row = existing
-      ? await tx.player.update({
-          where: { id: existing.id },
-          data: {
-            teamId,
-            overall: player.overall,
-            jerseyNumber: player.jerseyNumber,
-            rosterId: player.rosterId ?? existing.rosterId,
-          },
-        })
-      : await tx.player.create({
-          data: {
-            leagueId,
-            teamId,
-            rosterId: player.rosterId,
-            firstName: player.firstName,
-            lastName: player.lastName,
-            position: player.position,
-            jerseyNumber: player.jerseyNumber,
-            overall: player.overall,
-          },
-        });
-
-    const key = player.rosterId ?? `${player.lastName}|${player.firstName}|${player.position}`;
+  for (const player of dedupeExportPlayers(data.players)) {
+    const row = await upsertSyncedPlayer(tx, leagueId, player, teamByAbbr);
+    const key =
+      (player.rosterId?.trim() || null) ??
+      `${player.lastName}|${player.firstName}|${player.position}`;
     playerByKey.set(key, row.id);
+    // Stats often key only by rosterId — keep that alias even when name key differs.
+    if (player.rosterId?.trim()) {
+      playerByKey.set(player.rosterId.trim(), row.id);
+    }
   }
 
   for (const game of data.games) {
