@@ -50,6 +50,7 @@ Set `EA_CLIENT_MODE=live` (and yearly Companion constants in `.env`) for real Bl
 - [Architecture](docs/architecture.md)
 - [EA sync](docs/ea-sync.md)
 - [Brand](docs/brand.md)
+- [Design system](docs/design-system.md) (Figma + Tailwind tokens)
 - [AWS](docs/aws.md)
 - [Contributing](CONTRIBUTING.md)
 
