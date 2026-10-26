@@ -7,6 +7,12 @@
 
 The stylized **M** uses a red chevron (`#D32F2F`) over primary blue legs (`#4B5F91`). Prefer the full wordmark in navigation and the marketing hero.
 
+## Design system
+
+Figma source of truth (DaddyLeague League Site team): [MaddenHQ Design System](https://www.figma.com/design/Jfpf56LxiRODZaO5v8gwtj)
+
+Token ↔ code map, components, and Tailwind usage: [design-system.md](./design-system.md). Live specimen: `/design-system`.
+
 ## Colors
 
 | Token | Hex | Usage |
@@ -15,7 +21,7 @@ The stylized **M** uses a red chevron (`#D32F2F`) over primary blue legs (`#4B5F
 | Primary | `#4B5F91` | Brand chrome, headings, links |
 | Accent | `#D32F2F` | Primary CTAs, active nav, emphasis |
 
-Derived tokens live in `src/app/globals.css` (`--primary-soft`, `--primary-border`, `--muted`).
+Derived tokens live in `src/app/globals.css` (`--primary-soft`, `--primary-border`, `--muted`, spacing scale, etc.) and are exposed to Tailwind via `@theme inline`.
 
 ## Typography
 

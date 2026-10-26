@@ -9,7 +9,7 @@ MaddenHQ is modular on purpose so humans and coding agents can add features with
 3. EA client code lives behind `src/server/ea` (`EaClient` interface). Prefer the stub client in tests; `EA_CLIENT_MODE=live` uses Companion OAuth + Blaze (`live-client.ts`).
 4. Awards/trades start as **rule-based** services (`rules-v1`) with stable function contracts — swap in LLM implementations later without changing UI. Branch naming for product phases: `feature/phase-XX`.
 5. Stats aggregations live in `src/server/stats/` (standings, fantasy, leaders) so awards UI and leaderboards share one source of truth.
-6. Brand tokens are fixed: background `#FFFFFF`, primary `#4B5F91`, accent `#D32F2F`.
+6. Brand tokens are fixed: background `#FFFFFF`, primary `#4B5F91`, accent `#D32F2F`. Figma DS + Tailwind map: `docs/design-system.md` (file `Jfpf56LxiRODZaO5v8gwtj` on DaddyLeague League Site).
 
 ## Useful commands
 

@@ -43,4 +43,4 @@ npm test
 
 ## Design
 
-See [docs/brand.md](docs/brand.md). Keep the white / `#4B5F91` / `#D32F2F` palette and logo-first marketing surfaces.
+See [docs/brand.md](docs/brand.md) and [docs/design-system.md](docs/design-system.md). Keep the white / `#4B5F91` / `#D32F2F` palette, Figma-synced CSS variables, and logo-first marketing surfaces.

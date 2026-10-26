@@ -1,16 +1,49 @@
 @import "tailwindcss";
 
+/*
+  MaddenHQ Design System tokens.
+  Keep in sync with Figma: https://www.figma.com/design/Jfpf56LxiRODZaO5v8gwtj
+  See docs/design-system.md for the full map.
+*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #1a2238;
-  --primary: #4b5f91;
-  --primary-soft: color-mix(in srgb, var(--primary) 8%, white);
-  --primary-border: color-mix(in srgb, var(--primary) 18%, white);
-  --accent: #d32f2f;
-  --accent-hover: #b71c1c;
-  --muted: color-mix(in srgb, var(--primary) 62%, #6b7280);
-  --ink-dark: #0b0d12;
+  /* Primitives */
+  --mhq-white: #ffffff;
+  --mhq-ink-900: #0b0d12;
+  --mhq-ink-800: #1a2238;
+  --mhq-brand-500: #4b5f91;
+  --mhq-brand-soft: #f2f4f9;
+  --mhq-brand-border: #d7dceb;
+  --mhq-accent-500: #d32f2f;
+  --mhq-accent-600: #b71c1c;
+  --mhq-muted-500: #6b7280;
+  --mhq-nav-muted: #d7dceb;
+
+  /* Semantic (Color collection) */
+  --background: var(--mhq-white);
+  --foreground: var(--mhq-ink-800);
+  --primary: var(--mhq-brand-500);
+  --primary-soft: var(--mhq-brand-soft);
+  --primary-border: var(--mhq-brand-border);
+  --accent: var(--mhq-accent-500);
+  --accent-hover: var(--mhq-accent-600);
+  --muted: color-mix(in srgb, var(--primary) 62%, var(--mhq-muted-500));
+  --ink-dark: var(--mhq-ink-900);
   --surface: var(--primary-soft);
+  --on-accent: var(--mhq-white);
+  --on-primary: var(--mhq-white);
+  --nav-foreground: var(--mhq-nav-muted);
+
+  /* Spacing */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+
+  /* Radius — sharp sport chrome */
   --radius: 0;
 }
 
@@ -18,8 +51,27 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-border: var(--primary-border);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-muted: var(--muted);
+  --color-ink-dark: var(--ink-dark);
+  --color-surface: var(--surface);
+  --color-on-accent: var(--on-accent);
+  --color-on-primary: var(--on-primary);
+  --color-nav-foreground: var(--nav-foreground);
+
+  --spacing-mhq-1: var(--spacing-1);
+  --spacing-mhq-2: var(--spacing-2);
+  --spacing-mhq-3: var(--spacing-3);
+  --spacing-mhq-4: var(--spacing-4);
+  --spacing-mhq-5: var(--spacing-5);
+  --spacing-mhq-6: var(--spacing-6);
+  --spacing-mhq-8: var(--spacing-8);
+
+  --radius-mhq: var(--radius);
+
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
 }
@@ -89,7 +141,7 @@ h3,
   display: flex;
   align-items: center;
   gap: 1rem;
-  color: #d7dceb;
+  color: var(--nav-foreground);
   font-size: 0.92rem;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -105,6 +157,7 @@ h3,
   justify-content: center;
   gap: 0.4rem;
   border: 1px solid transparent;
+  border-radius: var(--radius);
   padding: 0.7rem 1.15rem;
   font-family: var(--font-display), sans-serif;
   font-weight: 700;
@@ -121,7 +174,7 @@ h3,
 
 .btn--accent {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .btn--accent:hover {
@@ -130,12 +183,12 @@ h3,
 
 .btn--primary {
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
 }
 
 .btn--ghost {
   background: transparent;
-  color: #d7dceb;
+  color: var(--nav-foreground);
   border-color: color-mix(in srgb, white 25%, transparent);
 }
 
@@ -210,7 +263,7 @@ h3,
 .hero p {
   margin: 0;
   max-width: 42ch;
-  color: #d7dceb;
+  color: var(--nav-foreground);
   font-size: 1.05rem;
   line-height: 1.55;
   animation: brandIn 1s ease both;
@@ -238,6 +291,7 @@ h3,
 .panel {
   background: white;
   border: 1px solid var(--primary-border);
+  border-radius: var(--radius);
   padding: 1.25rem;
 }
 
@@ -297,6 +351,7 @@ textarea,
 select {
   width: 100%;
   border: 1px solid var(--primary-border);
+  border-radius: var(--radius);
   background: white;
   color: var(--foreground);
   padding: 0.7rem 0.8rem;
