@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { Panel } from "@/components/ui";
 import { summarizeStats, type StatBag } from "@/server/stats/fantasy";
 import { getGameBoxScore } from "@/server/stats/queries";
 
@@ -34,10 +35,7 @@ export default async function GameBoxScorePage({
 
   function renderSide(title: string, rows: BoxStatRow[]) {
     return (
-      <section className="panel">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          {title}
-        </h2>
+      <Panel title={title}>
         {rows.length === 0 ? (
           <div className="empty">No player stats logged for this side.</div>
         ) : (
@@ -62,25 +60,22 @@ export default async function GameBoxScorePage({
             </tbody>
           </table>
         )}
-      </section>
+      </Panel>
     );
   }
 
   return (
     <div className="stack">
-      <p className="muted" style={{ margin: 0 }}>
+      <p className="muted">
         <Link href={`/leagues/${slug}/scores`}>← Scores</Link>
       </p>
-      <section className="panel">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          {game.awayTeam.abbr} {game.awayScore ?? "—"} @ {game.homeTeam.abbr}{" "}
-          {game.homeScore ?? "—"}
-        </h2>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          {game.season.label ?? game.season.year} · Week {game.week.number} ·{" "}
-          {game.status}
+      <Panel
+        title={`${game.awayTeam.abbr} ${game.awayScore ?? "—"} @ ${game.homeTeam.abbr} ${game.homeScore ?? "—"}`}
+      >
+        <p className="muted">
+          {game.season.label ?? game.season.year} · Week {game.week.number} · {game.status}
         </p>
-      </section>
+      </Panel>
       {renderSide(
         `${game.awayTeam.city ? `${game.awayTeam.city} ` : ""}${game.awayTeam.name}`,
         awayStats,
