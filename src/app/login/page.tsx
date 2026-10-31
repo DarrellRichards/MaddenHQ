@@ -1,6 +1,7 @@
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
+import { Button, Panel } from "@/components/ui";
 
 export const metadata = { title: "Sign in" };
 
@@ -51,11 +52,15 @@ export default async function LoginPage({
 
   return (
     <div className="shell stack" style={{ maxWidth: 560 }}>
-      <h1 className="display">Sign in</h1>
-      <p className="muted">
-        Discord is the primary login for MaddenHQ. After you sign in, create a league,
-        then connect EA to sync Madden data.
-      </p>
+      <header className="stack" style={{ gap: "0.5rem" }}>
+        <h1 className="display" style={{ margin: 0 }}>
+          Sign in
+        </h1>
+        <p className="muted" style={{ margin: 0 }}>
+          Discord is the primary login for MaddenHQ. After you sign in, create a league,
+          then connect EA to sync Madden data.
+        </p>
+      </header>
 
       {params.error ? (
         <p className="panel" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
@@ -63,15 +68,15 @@ export default async function LoginPage({
         </p>
       ) : null}
 
-      <div className="panel stack">
+      <Panel>
         {discordConfigured ? (
           <form action={discordSignIn}>
-            <button type="submit" className="btn btn--accent" style={{ width: "100%" }}>
+            <Button type="submit" variant="accent" style={{ width: "100%" }}>
               Continue with Discord
-            </button>
+            </Button>
           </form>
         ) : (
-          <p className="muted">
+          <p className="muted" style={{ margin: 0 }}>
             Discord OAuth is not configured. Set <code>DISCORD_CLIENT_ID</code> and{" "}
             <code>DISCORD_CLIENT_SECRET</code> in <code>.env</code>.
           </p>
@@ -79,7 +84,7 @@ export default async function LoginPage({
 
         {devLogin ? (
           <>
-            <hr style={{ border: 0, borderTop: "1px solid var(--primary-border)" }} />
+            <hr style={{ border: 0, borderTop: "1px solid var(--primary-border)", margin: 0 }} />
             <p className="muted" style={{ margin: 0 }}>
               Local/dev credentials (seeded by <code>npm run db:seed</code>):
             </p>
@@ -102,13 +107,13 @@ export default async function LoginPage({
                   required
                 />
               </label>
-              <button type="submit" className="btn btn--primary">
+              <Button type="submit" variant="primary">
                 Dev sign in
-              </button>
+              </Button>
             </form>
           </>
         ) : null}
-      </div>
+      </Panel>
     </div>
   );
 }

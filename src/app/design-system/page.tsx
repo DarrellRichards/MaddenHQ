@@ -68,9 +68,9 @@ export default function DesignSystemPage() {
       </Panel>
 
       <Panel title="Typography">
-        <h2 className="display text-primary" style={{ marginTop: 0 }}>
+        <p className="display panel__title" style={{ fontSize: "1.5rem" }}>
           Display · Chakra Petch
-        </h2>
+        </p>
         <p style={{ margin: 0, maxWidth: "48ch" }}>
           Body · Manrope. League copy stays readable; display faces carry the sport chrome.
         </p>

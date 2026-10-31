@@ -130,7 +130,7 @@ export default function HomePage() {
             <Link href="/login" className="btn btn--accent">
               Start your league
             </Link>
-            <Link href="/donate" className="btn btn--ghost">
+            <Link href="/donate" className="btn btn--outline">
               Support the project
             </Link>
           </div>
