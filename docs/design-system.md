@@ -2,6 +2,8 @@
 
 Figma (DaddyLeague League Site): [MaddenHQ Design System](https://www.figma.com/design/Jfpf56LxiRODZaO5v8gwtj)
 
+Marketing landing frame: [Landing / Desktop](https://www.figma.com/design/Jfpf56LxiRODZaO5v8gwtj?node-id=5-13) → implemented by `src/app/page.tsx`.
+
 Code tokens live in `src/app/globals.css` (`:root` + Tailwind v4 `@theme inline`). React primitives: `src/components/ui/`.
 
 ## Token map (Figma → CSS)
