@@ -5,6 +5,7 @@ import {
   generateSeasonAwardsAction,
   generateWeeklyAwardsAction,
 } from "@/app/actions/awards";
+import { Button, Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 import { suggestSeasonAwards } from "@/server/awards/season";
 import { suggestWeeklyAwards } from "@/server/awards/weekly";
@@ -68,26 +69,16 @@ export default async function AwardsPage({
   return (
     <div className="stack">
       {error ? (
-        <div
-          className="panel"
-          style={{ borderColor: "var(--accent)", color: "var(--accent)", margin: 0 }}
-        >
+        <Panel tone="alert">
           <strong>Awards issue:</strong> {error}
-        </div>
+        </Panel>
       ) : null}
-      {saved ? (
-        <div className="panel" style={{ margin: 0 }}>
-          Saved {saved} awards.
-        </div>
-      ) : null}
+      {saved ? <Panel>Saved {saved} awards.</Panel> : null}
 
-      <section className="panel stack">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Weekly awards
-        </h2>
+      <Panel title="Weekly awards">
         <p className="muted">
-          Rule-based Game of the Week and AFC/NFC offense &amp; defense Players of the
-          Week. Swap in an LLM later without changing this UI.
+          Rule-based Game of the Week and AFC/NFC offense &amp; defense Players of the Week.
+          Swap in an LLM later without changing this UI.
         </p>
 
         {weeks.length === 0 ? (
@@ -105,9 +96,9 @@ export default async function AwardsPage({
                   ))}
                 </select>
               </label>
-              <button type="submit" className="btn">
+              <Button type="submit" variant="outline">
                 Preview week
-              </button>
+              </Button>
             </form>
 
             <table className="table">
@@ -132,19 +123,16 @@ export default async function AwardsPage({
                 <input type="hidden" name="leagueId" value={league.id} />
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="weekId" value={selectedWeek.id} />
-                <button type="submit" className="btn btn--primary">
+                <Button type="submit" variant="primary">
                   Save weekly awards (Week {selectedWeek.number})
-                </button>
+                </Button>
               </form>
             ) : null}
           </>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel stack">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Season awards
-        </h2>
+      <Panel title="Season awards">
         {seasonPreview.length === 0 ? (
           <div className="empty">No current season.</div>
         ) : (
@@ -170,19 +158,16 @@ export default async function AwardsPage({
                 <input type="hidden" name="leagueId" value={league.id} />
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="seasonId" value={season.id} />
-                <button type="submit" className="btn btn--primary">
+                <Button type="submit" variant="primary">
                   Save season awards
-                </button>
+                </Button>
               </form>
             ) : null}
           </>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Saved awards
-        </h2>
+      <Panel title="Saved awards">
         {league.weeklyAwards.length + league.seasonAwards.length === 0 ? (
           <div className="empty">No persisted awards yet.</div>
         ) : (
@@ -225,7 +210,7 @@ export default async function AwardsPage({
             </tbody>
           </table>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }
