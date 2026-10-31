@@ -9,6 +9,7 @@ import {
   selectEaLeagueAction,
   selectEaPersonaAction,
 } from "@/app/actions/ea-connect";
+import { Button, Panel } from "@/components/ui";
 import { getEaClient } from "@/server/ea";
 import {
   getPendingEaTokens,
@@ -57,11 +58,8 @@ export default async function SyncPage({
 
   return (
     <div className="stack">
-      <section className="panel stack">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Connect EA
-        </h2>
-        <p className="muted" style={{ margin: 0 }}>
+      <Panel title="Connect EA">
+        <p className="muted">
           MaddenHQ does <strong>not</strong> store your EA password. Open EA login, paste
           the <code>http://127.0.0.1/...</code> callback URL, pick your persona and league.
           Tokens are encrypted at rest. Mode: <code>{mode}</code> (set{" "}
@@ -69,16 +67,13 @@ export default async function SyncPage({
         </p>
 
         {error ? (
-          <div
-            className="panel"
-            style={{ borderColor: "var(--accent)", color: "var(--accent)", margin: 0 }}
-          >
+          <Panel tone="alert">
             <strong>EA sync issue:</strong> {error}
-            <p className="muted" style={{ margin: "0.5rem 0 0", color: "inherit" }}>
+            <p className="muted-sm">
               EA sometimes returns temporary server errors. Retry in a minute, or enter your
               EA league id manually below if you already know it.
             </p>
-          </div>
+          </Panel>
         ) : null}
 
         {!canManage ? (
@@ -100,9 +95,9 @@ export default async function SyncPage({
                 ))}
               </select>
             </label>
-            <button type="submit" className="btn btn--accent">
+            <Button type="submit" variant="accent">
               Continue
-            </button>
+            </Button>
           </form>
         ) : activeStep === "league" ? (
           <div className="stack">
@@ -124,9 +119,9 @@ export default async function SyncPage({
                     ))}
                   </select>
                 </label>
-                <button type="submit" className="btn btn--accent">
+                <Button type="submit" variant="accent">
                   Save EA connection
-                </button>
+                </Button>
               </form>
             ) : (
               <>
@@ -138,9 +133,9 @@ export default async function SyncPage({
                 <form action={retryEaLeagueListAction}>
                   <input type="hidden" name="leagueId" value={league.id} />
                   <input type="hidden" name="slug" value={slug} />
-                  <button type="submit" className="btn btn--primary">
+                  <Button type="submit" variant="primary">
                     Retry league list
-                  </button>
+                  </Button>
                 </form>
                 <form action={selectEaLeagueAction} className="form-grid">
                   <input type="hidden" name="leagueId" value={league.id} />
@@ -149,9 +144,9 @@ export default async function SyncPage({
                     EA league id (manual)
                     <input name="eaLeagueId" required placeholder="e.g. 2890093" />
                   </label>
-                  <button type="submit" className="btn btn--accent">
+                  <Button type="submit" variant="accent">
                     Save with manual league id
-                  </button>
+                  </Button>
                 </form>
               </>
             )}
@@ -177,18 +172,15 @@ export default async function SyncPage({
                   placeholder="http://127.0.0.1/success?code=..."
                 />
               </label>
-              <button type="submit" className="btn btn--accent">
+              <Button type="submit" variant="accent">
                 Continue with callback URL
-              </button>
+              </Button>
             </form>
           </div>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel stack">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Sync status
-        </h2>
+      <Panel title="Sync status">
         {league.eaConnection ? (
           <>
             <table className="table">
@@ -230,17 +222,17 @@ export default async function SyncPage({
                   <input type="hidden" name="leagueId" value={league.id} />
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="scope" value="all" />
-                  <button type="submit" className="btn btn--primary">
+                  <Button type="submit" variant="primary">
                     Sync full season
-                  </button>
+                  </Button>
                 </form>
                 <form action={triggerSyncAction}>
                   <input type="hidden" name="leagueId" value={league.id} />
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="scope" value="week" />
-                  <button type="submit" className="btn">
+                  <Button type="submit" variant="outline">
                     Sync current week only
-                  </button>
+                  </Button>
                 </form>
               </div>
             ) : null}
@@ -248,7 +240,7 @@ export default async function SyncPage({
         ) : (
           <div className="empty">No EA connection yet.</div>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }

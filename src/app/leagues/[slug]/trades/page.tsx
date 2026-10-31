@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { createTradeAction, reevaluateTradeAction } from "@/app/actions/trades";
+import { Button, Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 
 export default async function TradesPage({
@@ -50,27 +51,16 @@ export default async function TradesPage({
   return (
     <div className="stack">
       {error ? (
-        <div
-          className="panel"
-          style={{ borderColor: "var(--accent)", color: "var(--accent)", margin: 0 }}
-        >
+        <Panel tone="alert">
           <strong>Trade issue:</strong> {error}
-        </div>
+        </Panel>
       ) : null}
-      {created ? (
-        <div className="panel" style={{ margin: 0 }}>
-          Trade proposed and graded with rules-v1.
-        </div>
-      ) : null}
+      {created ? <Panel>Trade proposed and graded with rules-v1.</Panel> : null}
 
-      <section className="panel stack">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Propose a trade
-        </h2>
+      <Panel title="Propose a trade">
         <p className="muted">
-          Pick assets leaving each club. Valuation uses overall + draft-pick heuristics
-          (<code>rules-v1</code>). LLM grading can replace{" "}
-          <code>evaluateTrade()</code> later.
+          Pick assets leaving each club. Valuation uses overall + draft-pick heuristics (
+          <code>rules-v1</code>). LLM grading can replace <code>evaluateTrade()</code> later.
         </p>
 
         {!isMember ? (
@@ -100,9 +90,9 @@ export default async function TradesPage({
                   ))}
                 </select>
               </label>
-              <button type="submit" className="btn">
+              <Button type="submit" variant="outline">
                 Load rosters
-              </button>
+              </Button>
             </form>
 
             <form action={createTradeAction} className="stack">
@@ -114,15 +104,12 @@ export default async function TradesPage({
               <div className="form-grid">
                 <fieldset>
                   <legend>Players leaving from team</legend>
-                  <div className="stack" style={{ gap: "0.35rem" }}>
+                  <div className="choice-stack">
                     {fromPlayers.length === 0 ? (
                       <span className="muted">No players on this roster.</span>
                     ) : (
                       fromPlayers.map((player) => (
-                        <label
-                          key={player.id}
-                          style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
-                        >
+                        <label key={player.id} className="choice">
                           <input type="checkbox" name="fromPlayerIds" value={player.id} />
                           <span>
                             {player.position} {player.firstName} {player.lastName} (OVR{" "}
@@ -135,15 +122,12 @@ export default async function TradesPage({
                 </fieldset>
                 <fieldset>
                   <legend>Players leaving to team</legend>
-                  <div className="stack" style={{ gap: "0.35rem" }}>
+                  <div className="choice-stack">
                     {toPlayers.length === 0 ? (
                       <span className="muted">No players on this roster.</span>
                     ) : (
                       toPlayers.map((player) => (
-                        <label
-                          key={player.id}
-                          style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
-                        >
+                        <label key={player.id} className="choice">
                           <input type="checkbox" name="toPlayerIds" value={player.id} />
                           <span>
                             {player.position} {player.firstName} {player.lastName} (OVR{" "}
@@ -172,18 +156,15 @@ export default async function TradesPage({
                 <textarea name="notes" rows={2} placeholder="Commissioner notes" />
               </label>
 
-              <button type="submit" className="btn btn--primary">
+              <Button type="submit" variant="primary">
                 Propose &amp; grade trade
-              </button>
+              </Button>
             </form>
           </>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Trades
-        </h2>
+      <Panel title="Trades">
         {league.trades.length === 0 ? (
           <div className="empty">No trades yet.</div>
         ) : (
@@ -203,7 +184,7 @@ export default async function TradesPage({
                   <td>{trade.status}</td>
                   <td>{trade.proposer.name ?? trade.proposer.email}</td>
                   <td>
-                    <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                    <ul className="list-compact">
                       {trade.assets.map((asset) => (
                         <li key={asset.id}>
                           <strong>{asset.side}</strong>:{" "}
@@ -219,18 +200,16 @@ export default async function TradesPage({
                     {trade.evaluation?.score != null
                       ? `${trade.evaluation.score > 0 ? "+" : ""}${trade.evaluation.score}`
                       : "—"}
-                    <div className="muted" style={{ fontSize: "0.85rem" }}>
-                      {trade.evaluation?.summary}
-                    </div>
+                    <div className="muted-sm">{trade.evaluation?.summary}</div>
                   </td>
                   <td>
                     <form action={reevaluateTradeAction}>
                       <input type="hidden" name="leagueId" value={league.id} />
                       <input type="hidden" name="slug" value={slug} />
                       <input type="hidden" name="tradeId" value={trade.id} />
-                      <button type="submit" className="btn">
+                      <Button type="submit" variant="outline">
                         Re-grade
-                      </button>
+                      </Button>
                     </form>
                   </td>
                 </tr>
@@ -238,7 +217,7 @@ export default async function TradesPage({
             </tbody>
           </table>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }
