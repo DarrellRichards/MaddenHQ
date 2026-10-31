@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { Panel } from "@/components/ui";
 import { computeStandings, winPct } from "@/server/stats/standings";
 
 export default async function StandingsPage({
@@ -52,10 +53,7 @@ export default async function StandingsPage({
     );
 
   return (
-    <section className="panel">
-      <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-        Standings
-      </h2>
+    <Panel title="Standings">
       <p className="muted">
         Computed from final synced games
         {season ? ` · ${season.label ?? season.year}` : ""}.
@@ -97,6 +95,6 @@ export default async function StandingsPage({
           </tbody>
         </table>
       )}
-    </section>
+    </Panel>
   );
 }

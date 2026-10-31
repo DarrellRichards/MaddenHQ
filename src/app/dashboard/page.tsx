@@ -21,11 +21,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="shell stack">
-      <header className="stack" style={{ gap: "0.5rem" }}>
-        <h1 className="display" style={{ margin: 0 }}>
-          Your leagues
-        </h1>
-        <p className="muted" style={{ margin: 0 }}>
+      <header className="stack stack--tight">
+        <h1 className="display page-title">Your leagues</h1>
+        <p className="muted">
           Signed in as {session.user.name ?? session.user.email}. Create a league, then
           connect EA from the Sync tab.
         </p>

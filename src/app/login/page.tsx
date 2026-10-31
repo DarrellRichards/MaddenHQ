@@ -51,32 +51,30 @@ export default async function LoginPage({
     process.env.ENABLE_DEV_LOGIN === "true" || process.env.NODE_ENV !== "production";
 
   return (
-    <div className="shell stack" style={{ maxWidth: 560 }}>
-      <header className="stack" style={{ gap: "0.5rem" }}>
-        <h1 className="display" style={{ margin: 0 }}>
-          Sign in
-        </h1>
-        <p className="muted" style={{ margin: 0 }}>
+    <div className="shell shell--narrow stack">
+      <header className="stack stack--tight">
+        <h1 className="display page-title">Sign in</h1>
+        <p className="muted">
           Discord is the primary login for MaddenHQ. After you sign in, create a league,
           then connect EA to sync Madden data.
         </p>
       </header>
 
       {params.error ? (
-        <p className="panel" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+        <Panel tone="alert">
           Sign-in failed. Check your credentials or Discord app settings.
-        </p>
+        </Panel>
       ) : null}
 
       <Panel>
         {discordConfigured ? (
           <form action={discordSignIn}>
-            <Button type="submit" variant="accent" style={{ width: "100%" }}>
+            <Button type="submit" variant="accent" className="btn--block">
               Continue with Discord
             </Button>
           </form>
         ) : (
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted">
             Discord OAuth is not configured. Set <code>DISCORD_CLIENT_ID</code> and{" "}
             <code>DISCORD_CLIENT_SECRET</code> in <code>.env</code>.
           </p>
@@ -84,8 +82,8 @@ export default async function LoginPage({
 
         {devLogin ? (
           <>
-            <hr style={{ border: 0, borderTop: "1px solid var(--primary-border)", margin: 0 }} />
-            <p className="muted" style={{ margin: 0 }}>
+            <hr className="rule" />
+            <p className="muted">
               Local/dev credentials (seeded by <code>npm run db:seed</code>):
             </p>
             <form action={devSignIn} className="form-grid">

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
+import { Button } from "@/components/ui";
 
 export async function SiteHeader() {
   const session = await auth();
@@ -35,9 +36,9 @@ export async function SiteHeader() {
                 await signOut({ redirectTo: "/" });
               }}
             >
-              <button type="submit" className="btn btn--ghost">
+              <Button type="submit" variant="ghost">
                 Sign out
-              </button>
+              </Button>
             </form>
           ) : (
             <Link href="/login" className="btn btn--accent">

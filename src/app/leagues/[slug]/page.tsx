@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { Panel } from "@/components/ui";
 import { getCategoryLeaders, getCurrentSeason, getSeasonGames } from "@/server/stats/queries";
 
 export default async function LeagueOverviewPage({
@@ -36,10 +37,7 @@ export default async function LeagueOverviewPage({
 
   return (
     <div className="stack">
-      <section className="panel">
-        <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-          Snapshot
-        </h2>
+      <Panel title="Snapshot">
         <table className="table">
           <tbody>
             <tr>
@@ -69,20 +67,11 @@ export default async function LeagueOverviewPage({
             </tr>
           </tbody>
         </table>
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: "1rem",
-            alignItems: "baseline",
-          }}
-        >
-          <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-            Recent games
-          </h2>
+      <Panel>
+        <div className="panel__toolbar">
+          <h2 className="panel__title display">Recent games</h2>
           <Link href={`/leagues/${slug}/scores`}>All scores</Link>
         </div>
         {recentGames.length === 0 ? (
@@ -117,20 +106,11 @@ export default async function LeagueOverviewPage({
             </tbody>
           </table>
         )}
-      </section>
+      </Panel>
 
-      <section className="panel">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: "1rem",
-            alignItems: "baseline",
-          }}
-        >
-          <h2 className="display" style={{ marginTop: 0, fontSize: "1.05rem" }}>
-            Passing leaders
-          </h2>
+      <Panel>
+        <div className="panel__toolbar">
+          <h2 className="panel__title display">Passing leaders</h2>
           <Link href={`/leagues/${slug}/stats?cat=passing`}>Full board</Link>
         </div>
         {passingLeaders.length === 0 ? (
@@ -157,7 +137,7 @@ export default async function LeagueOverviewPage({
             </tbody>
           </table>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }
