@@ -10,7 +10,7 @@ type PanelProps = HTMLAttributes<HTMLElement> & {
 export function Panel({ title, children, className, ...rest }: PanelProps) {
   return (
     <section className={cn("panel", className)} {...rest}>
-      {title ? <h2 className="display text-primary text-lg m-0 mb-3">{title}</h2> : null}
+      {title ? <h2 className="panel__title display">{title}</h2> : null}
       {children}
     </section>
   );

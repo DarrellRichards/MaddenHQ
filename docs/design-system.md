@@ -17,7 +17,7 @@ Code tokens live in `src/app/globals.css` (`:root` + Tailwind v4 `@theme inline`
 | `color/primary-border` | `--primary-border` / `border-primary-border` |
 | `color/accent` | `--accent` / `bg-accent` `text-accent` |
 | `color/accent-hover` | `--accent-hover` |
-| `color/muted` | `--muted` / `text-muted` |
+| `color/muted` | `--muted` (`#6B7280`) / `text-muted` |
 | `color/ink-dark` | `--ink-dark` / `bg-ink-dark` |
 | `color/surface` | `--surface` / `bg-surface` |
 | `color/on-accent` | `--on-accent` |

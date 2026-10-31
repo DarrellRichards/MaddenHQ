@@ -27,7 +27,8 @@
   --primary-border: var(--mhq-brand-border);
   --accent: var(--mhq-accent-500);
   --accent-hover: var(--mhq-accent-600);
-  --muted: color-mix(in srgb, var(--primary) 62%, var(--mhq-muted-500));
+  /* Figma Color/muted — exact specimen, not a primary mix */
+  --muted: var(--mhq-muted-500);
   --ink-dark: var(--mhq-ink-900);
   --surface: var(--primary-soft);
   --on-accent: var(--mhq-white);
@@ -155,15 +156,17 @@ h3,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: var(--spacing-2);
   border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 0.7rem 1.15rem;
+  /* Figma Button: spacing/3 vertical, spacing/5 horizontal, 13px / 0.06em track */
+  padding: var(--spacing-3) var(--spacing-5);
   font-family: var(--font-display), sans-serif;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 0.82rem;
+  font-size: 0.8125rem;
+  line-height: 1;
   cursor: pointer;
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
@@ -189,7 +192,7 @@ h3,
 .btn--ghost {
   background: transparent;
   color: var(--nav-foreground);
-  border-color: color-mix(in srgb, white 25%, transparent);
+  border-color: var(--nav-foreground);
 }
 
 .btn--ghost:hover {
@@ -201,6 +204,10 @@ h3,
   background: transparent;
   color: var(--primary);
   border-color: var(--primary);
+}
+
+.btn--outline:hover {
+  background: var(--primary-soft);
 }
 
 .shell {
@@ -387,27 +394,29 @@ h3,
   margin: 0.75rem 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Figma Feature grid — four columns, no card chrome */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 2rem 2.5rem;
 }
 
 .landing-feature {
   display: grid;
-  gap: 0.5rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid var(--primary-border);
+  gap: 0.625rem;
+  align-content: start;
+  padding-block: 0.5rem;
 }
 
 .landing-feature__title {
   margin: 0;
   color: var(--primary);
-  font-size: 1rem;
+  font-size: 1.125rem;
+  letter-spacing: 0.04em;
 }
 
 .landing-feature__copy {
   margin: 0;
   color: var(--muted);
-  font-size: 0.98rem;
+  font-size: 0.9375rem;
   line-height: 1.5;
 }
 
@@ -446,6 +455,12 @@ h3,
   gap: 0.75rem;
   justify-content: center;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 1100px) {
+  .landing-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
@@ -492,14 +507,24 @@ h3,
 }
 
 .panel {
-  background: white;
+  background: var(--background);
   border: 1px solid var(--primary-border);
   border-radius: var(--radius);
-  padding: 1.25rem;
+  /* Figma Panel: spacing/5 padding, spacing/4 stack gap */
+  padding: var(--spacing-5);
+  display: grid;
+  gap: var(--spacing-4);
 }
 
 .panel + .panel {
   margin-top: 1rem;
+}
+
+.panel__title {
+  margin: 0;
+  color: var(--primary);
+  font-size: 1.125rem;
+  letter-spacing: 0.04em;
 }
 
 .stack {
