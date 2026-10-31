@@ -1,3 +1,5 @@
+import { Panel } from "@/components/ui";
+
 export const metadata = { title: "Donate" };
 
 export default function DonatePage() {
@@ -7,45 +9,39 @@ export default function DonatePage() {
   const stripe = process.env.STRIPE_DONATION_URL;
 
   return (
-    <div className="shell stack" style={{ maxWidth: 720 }}>
-      <h1 className="display">Support MaddenHQ</h1>
-      <p className="muted">
-        MaddenHQ is open source and free for leagues. Donations help cover hosting
-        (AWS Postgres + compute), AI award/trade features, and community tooling.
-      </p>
+    <div className="shell shell--medium stack">
+      <header className="stack stack--tight">
+        <h1 className="display page-title">Support MaddenHQ</h1>
+        <p className="muted">
+          MaddenHQ is open source and free for leagues. Donations help cover hosting
+          (AWS Postgres + compute), AI award/trade features, and community tooling.
+        </p>
+      </header>
 
-      <section className="panel stack">
-        <h2 className="display" style={{ margin: 0, fontSize: "1.05rem" }}>
-          GitHub Sponsors
-        </h2>
-        <p className="muted" style={{ margin: 0 }}>
+      <Panel title="GitHub Sponsors">
+        <p className="muted">
           Recurring or one-time support directly on the repository.
         </p>
         <a href={sponsors} className="btn btn--accent" target="_blank" rel="noreferrer">
           Sponsor on GitHub
         </a>
-      </section>
+      </Panel>
 
-      <section className="panel stack">
-        <h2 className="display" style={{ margin: 0, fontSize: "1.05rem" }}>
-          Site donation
-        </h2>
+      <Panel title="Site donation">
         {stripe ? (
           <>
-            <p className="muted" style={{ margin: 0 }}>
-              One-time donation via Stripe Payment Link.
-            </p>
+            <p className="muted">One-time donation via Stripe Payment Link.</p>
             <a href={stripe} className="btn btn--primary" target="_blank" rel="noreferrer">
               Donate on the site
             </a>
           </>
         ) : (
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted">
             Set <code>STRIPE_DONATION_URL</code> to enable an on-site Stripe Payment Link.
             Until then, GitHub Sponsors is the primary way to support the project.
           </p>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }

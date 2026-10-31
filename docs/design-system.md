@@ -41,10 +41,10 @@ Loaded in `src/app/layout.tsx` as `--font-display` / `--font-body`.
 
 | Figma | Code |
 | --- | --- |
-| `Button` (`Variant=Accent\|Primary\|Ghost\|Outline`) | `<Button variant="…">` + `.btn` / `.btn--*` |
+| `Button` (`Variant=Accent\|Primary\|Ghost\|Outline`) | `<Button variant="…">` + `.btn` / `.btn--*` / `.btn--block` |
 | `Panel` | `<Panel title tone?>` + `.panel` / `.panel--alert` / `.panel__title` / `.panel__toolbar` |
 
-Legacy class names remain so existing pages keep working while we migrate to the UI package.
+`Link` / `<a>` CTAs use the same `.btn` classes (Button is a `<button>` only). Layout helpers: `.shell--narrow` / `.shell--medium`, `.stack--tight`, `.page-kicker`, `.page-title`, `.prose-narrow`, `.rule`, `.button-row`.
 
 ## Brand invariants
 

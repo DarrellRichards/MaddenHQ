@@ -95,7 +95,11 @@ body {
   background-image:
     radial-gradient(ellipse 80% 50% at 100% -10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 55%),
     radial-gradient(ellipse 60% 40% at -10% 20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
-    linear-gradient(180deg, #ffffff 0%, #f7f8fc 100%);
+    linear-gradient(
+      180deg,
+      var(--background) 0%,
+      color-mix(in srgb, var(--primary-soft) 70%, var(--background)) 100%
+    );
   background-attachment: fixed;
 }
 
@@ -210,10 +214,22 @@ h3,
   background: var(--primary-soft);
 }
 
+.btn--block {
+  width: 100%;
+}
+
 .shell {
   max-width: 1120px;
   margin: 0 auto;
   padding: 2rem 1.25rem 4rem;
+}
+
+.shell--narrow {
+  max-width: 560px;
+}
+
+.shell--medium {
+  max-width: 720px;
 }
 
 /* —— Landing (Figma Landing / Desktop) —— */
@@ -579,6 +595,57 @@ h3,
 .stack {
   display: grid;
   gap: 1rem;
+}
+
+.stack--tight {
+  gap: 0.5rem;
+}
+
+.prose-narrow {
+  max-width: 52ch;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--primary-border);
+  margin: 0;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.ghost-stage {
+  background: var(--ink-dark);
+  padding: var(--spacing-2);
+}
+
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--spacing-4);
+}
+
+.swatch {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.swatch__chip {
+  height: 72px;
+  border: 1px solid var(--primary-border);
+}
+
+.swatch__label {
+  font-size: 0.7rem;
+  color: var(--primary);
+}
+
+.display-lg {
+  font-size: 1.5rem;
 }
 
 .muted {
